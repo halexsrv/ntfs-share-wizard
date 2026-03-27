@@ -32,7 +32,7 @@ pub fn detected_system_details(app: &App) -> String {
         .unwrap_or_else(|| "not checked yet".to_owned());
 
     format!(
-        "Detected {} flow.\nLinux distro: {}\nntfs-3g: {}\nSystem module: {}\nTarget mount point: {}\nDefault SteamLibrary: {}\nSelected partition: {}\nPress Enter to continue in the Linux wizard.",
+        "[INFO] Fluxo detectado: {}.\nLinux distro: {}\nntfs-3g: {}\nSystem module: {}\nTarget mount point: {}\nDefault SteamLibrary: {}\nSelected partition: {}\n\nPressione Enter para continuar no wizard Linux.",
         app.operating_system().display_name(),
         system_info.distro.display_name(),
         ntfs_3g_summary,
@@ -408,54 +408,40 @@ pub fn current_view(app: &App) -> View<'static> {
 
 pub fn key_hints(state: Option<&LinuxWizardState>) -> &'static str {
     match state.map(LinuxWizardState::current_screen) {
-        Some(LinuxScreen::InstallPlan) => "Enter: continue | Esc: back | q: quit",
-        Some(LinuxScreen::InstallConfirm) => "Enter: run install plan | Esc: back | q: quit",
-        Some(LinuxScreen::InstallResult) => {
-            "Enter: continue when ntfs-3g is installed | Esc: back | q: quit"
-        }
+        Some(LinuxScreen::InstallPlan) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::InstallConfirm) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::InstallResult) => "Enter confirmar | Esc voltar | q sair",
         Some(LinuxScreen::PartitionSelection) => {
-            "Up/Down: move | Enter: select | Esc: back | q: quit"
+            "Up/Down mover | Enter confirmar | Esc voltar | q sair"
         }
-        Some(LinuxScreen::NoPartitions) => "Esc: back | q: quit",
-        Some(LinuxScreen::MountValidation) => {
-            "Enter: continue or create missing folders | Esc: back | q: quit"
-        }
-        Some(LinuxScreen::MountCreateConfirm) => "Enter: create folders | Esc: back | q: quit",
-        Some(LinuxScreen::MountCreateResult) => "Enter: continue | Esc: back | q: quit",
-        Some(LinuxScreen::FstabReview) => {
-            "Enter: continue to safe write flow | Esc: back | q: quit"
-        }
-        Some(LinuxScreen::FstabWriteConfirm) => "Enter: write /etc/fstab | Esc: back | q: quit",
-        Some(LinuxScreen::FstabWriteResult) => {
-            "Enter: continue to mount validation | Esc: back | q: quit"
-        }
-        Some(LinuxScreen::MountApplyConfirm) => "Enter: run mount -a | Esc: back | q: quit",
-        Some(LinuxScreen::MountApplyResult) => {
-            "Enter: continue when mount succeeded | Esc: back | q: quit"
-        }
-        Some(LinuxScreen::SteamLibraryCreateConfirm) => {
-            "Enter: create SteamLibrary | Esc: back | q: quit"
-        }
-        Some(LinuxScreen::SteamLibraryCreateResult) => {
-            "Enter: continue to final guidance | Esc: back | q: quit"
-        }
-        Some(LinuxScreen::FinalGuidance) => "Esc: back | q: quit",
-        None => "q: quit",
+        Some(LinuxScreen::NoPartitions) => "Esc voltar | q sair",
+        Some(LinuxScreen::MountValidation) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::MountCreateConfirm) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::MountCreateResult) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::FstabReview) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::FstabWriteConfirm) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::FstabWriteResult) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::MountApplyConfirm) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::MountApplyResult) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::SteamLibraryCreateConfirm) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::SteamLibraryCreateResult) => "Enter confirmar | Esc voltar | q sair",
+        Some(LinuxScreen::FinalGuidance) => "Esc voltar | q sair",
+        None => "q sair",
     }
 }
 
 fn install_plan_view(state: &LinuxWizardState) -> View<'static> {
     let assisted_note = match state.install_plan().execution_mode {
         system::InstallExecutionMode::Assisted => {
-            "This distro supports assisted execution. Press Enter to review the confirmation screen."
+            "[INFO] Esta distro suporta execucao assistida. Pressione Enter para revisar a confirmacao."
         }
         system::InstallExecutionMode::GuidedOnly => {
-            "This distro uses a guided-only flow. Review the steps carefully and run them manually outside the wizard."
+            "[WARNING] Esta distro usa fluxo apenas guiado. Revise os passos e execute manualmente fora do wizard."
         }
     };
 
     View {
-        title: "Install ntfs-3g",
+        title: "Linux | Instalar ntfs-3g",
         body: format!(
             "Linux distro: {}\nntfs-3g: {}\n\n{}\n\n{}",
             state.distro().display_name(),
@@ -468,9 +454,9 @@ fn install_plan_view(state: &LinuxWizardState) -> View<'static> {
 
 fn install_confirm_view(state: &LinuxWizardState) -> View<'static> {
     View {
-        title: "Confirm Install",
+        title: "Linux | Confirmar Instalacao",
         body: format!(
-            "Linux distro: {}\nntfs-3g: {}\n\nThe wizard is ready to execute these commands step by step:\n\n{}\n\nEach command will capture stdout/stderr and stop on failure.",
+            "Linux distro: {}\nntfs-3g: {}\n\n[INFO] O wizard esta pronto para executar estes comandos passo a passo:\n\n{}\n\n[INFO] Cada comando captura stdout/stderr e interrompe em caso de falha.\nLoading: a execucao comeca logo apos a confirmacao.",
             state.distro().display_name(),
             ntfs_3g_status_summary(state),
             format_install_plan(state.install_plan())
@@ -515,12 +501,12 @@ fn install_result_view(state: &LinuxWizardState) -> View<'static> {
     };
 
     View {
-        title: "Install Result",
+        title: "Linux | Resultado da Instalacao",
         body: format!(
-            "Linux distro: {}\nntfs-3g: {}\n\nSummary: {}\n\n{}\n\n{}",
+            "Linux distro: {}\nntfs-3g: {}\n\n{}\n\n{}\n\n{}",
             state.distro().display_name(),
             ntfs_3g_status_summary(state),
-            summary,
+            status_line(state.ntfs_3g_installed(), summary),
             results,
             next_step
         ),
@@ -559,9 +545,9 @@ fn partition_selection_view(state: &LinuxWizardState) -> View<'static> {
         .join("\n\n");
 
     View {
-        title: "NTFS Partitions",
+        title: "Linux | Selecionar Particao NTFS",
         body: format!(
-            "Linux distro: {}\nntfs-3g: {}\n\nDetected NTFS partitions:\n\n{}",
+            "Linux distro: {}\nntfs-3g: {}\n\n[INFO] Particoes NTFS detectadas, ordenadas da maior para a menor:\n\n{}",
             state.distro().display_name(),
             ntfs_3g_status_summary(state),
             partitions
@@ -571,9 +557,9 @@ fn partition_selection_view(state: &LinuxWizardState) -> View<'static> {
 
 fn no_partitions_view(state: &LinuxWizardState) -> View<'static> {
     View {
-        title: "No NTFS Partitions",
+        title: "Linux | Nenhuma Particao NTFS",
         body: format!(
-            "Linux distro: {}\nntfs-3g: {}\n\n{}",
+            "Linux distro: {}\nntfs-3g: {}\n\n[WARNING] {}",
             state.distro().display_name(),
             ntfs_3g_status_summary(state),
             state
@@ -595,9 +581,9 @@ fn mount_validation_view(state: &LinuxWizardState) -> View<'static> {
     };
 
     View {
-        title: "Validate Paths",
+        title: "Linux | Validar Caminhos",
         body: format!(
-            "{}\n\n{}",
+            "{}\n\n[INFO] {}",
             format_mount_layout(state.mount_layout()),
             guidance
         ),
@@ -606,9 +592,9 @@ fn mount_validation_view(state: &LinuxWizardState) -> View<'static> {
 
 fn mount_create_confirm_view(state: &LinuxWizardState) -> View<'static> {
     View {
-        title: "Confirm Folder Creation",
+        title: "Linux | Confirmar Criacao de Pastas",
         body: format!(
-            "{}\n\nThe wizard will create real directories when missing. It will not use symlinks.\n\nPress Enter to create the missing mountpoint layout.",
+            "{}\n\n[INFO] O wizard criara diretorios reais quando necessario.\n[WARNING] Symlinks nao sao usados neste fluxo.\n\nLoading: a criacao sera iniciada logo apos a confirmacao.",
             format_mount_layout(state.mount_layout())
         ),
     }
@@ -621,10 +607,10 @@ fn mount_create_result_view(state: &LinuxWizardState) -> View<'static> {
         .unwrap_or("No folder creation report is available.");
 
     View {
-        title: "Folder Creation Result",
+        title: "Linux | Resultado da Criacao",
         body: format!(
-            "Summary: {}\n\n{}\n\nPress Enter to continue.",
-            summary,
+            "{}\n\n{}\n\n[INFO] Pressione Enter para continuar.",
+            status_line(!summary.to_ascii_lowercase().contains("failed"), summary),
             format_mount_layout(state.mount_layout())
         ),
     }
@@ -639,9 +625,9 @@ fn fstab_review_view(state: &LinuxWizardState) -> View<'static> {
     };
 
     View {
-        title: "Review fstab Entry",
+        title: "Linux | Revisar Entrada do fstab",
         body: format!(
-            "Selected partition: {}\nSize: {}\nUUID: {}\nMountpoint: {}\n\nExact fstab line:\n{}",
+            "Selected partition: {}\nSize: {}\nUUID: {}\nMountpoint: {}\n\n[INFO] Linha exata que sera gravada:\n{}",
             partition.path,
             system::human_readable_size(partition.size_bytes),
             partition.uuid,
@@ -660,9 +646,9 @@ fn fstab_write_confirm_view(state: &LinuxWizardState) -> View<'static> {
     };
 
     View {
-        title: "Confirm fstab Write",
+        title: "Linux | Confirmar Escrita no fstab",
         body: format!(
-            "The wizard will:\n1. Create a timestamped backup of /etc/fstab\n2. Ensure {} exists\n3. Skip writing if UUID={} is already present\n4. Append the new line to the end of /etc/fstab\n\nLine to write:\n{}",
+            "[INFO] O wizard vai:\n1. Criar um backup timestampado de /etc/fstab\n2. Garantir que {} exista\n3. Ignorar a escrita se UUID={} ja estiver presente\n4. Acrescentar a nova linha ao final de /etc/fstab\n\n[INFO] Linha a ser gravada:\n{}\n\nLoading: a escrita segura comeca logo apos a confirmacao.",
             system::default_mountpoint(),
             partition.uuid,
             system::generate_fstab_entry(partition)
@@ -679,10 +665,10 @@ fn fstab_write_result_view(state: &LinuxWizardState) -> View<'static> {
     };
 
     View {
-        title: "fstab Write Result",
+        title: "Linux | Resultado da Escrita no fstab",
         body: format!(
-            "Summary: {}\nBackup created: {}\nEntry already existed: {}\n\nLine:\n{}",
-            report.summary,
+            "{}\nBackup created: {}\nEntry already existed: {}\n\nLine:\n{}",
+            status_line(report.success, &report.summary),
             report.backup_path.as_deref().unwrap_or("<none>"),
             if report.entry_already_exists {
                 "yes"
@@ -696,15 +682,15 @@ fn fstab_write_result_view(state: &LinuxWizardState) -> View<'static> {
 
 fn mount_apply_confirm_view(_state: &LinuxWizardState) -> View<'static> {
     View {
-        title: "Apply Mount",
-        body: "The wizard will now run `mount -a`, verify that /media/gamedisk is mounted, check whether it is writable, run a temporary write test, and validate whether /media/gamedisk/SteamLibrary exists.".to_owned(),
+        title: "Linux | Aplicar Montagem",
+        body: "[INFO] O wizard executara `mount -a`, verificara se /media/gamedisk foi montado, testara escrita e validara /media/gamedisk/SteamLibrary.\n\nLoading: a verificacao da montagem comeca logo apos a confirmacao.".to_owned(),
     }
 }
 
 fn mount_apply_result_view(state: &LinuxWizardState) -> View<'static> {
     let Some(report) = state.mount_apply_report() else {
         return View {
-            title: "Mount Result",
+            title: "Linux | Resultado da Montagem",
             body: "No mount validation result is available yet.".to_owned(),
         };
     };
@@ -729,10 +715,10 @@ fn mount_apply_result_view(state: &LinuxWizardState) -> View<'static> {
     };
 
     View {
-        title: "Mount Result",
+        title: "Linux | Resultado da Montagem",
         body: format!(
-            "Summary: {}\nMounted: {}\nRead-write: {}\nWrite test: {}\nSteamLibrary exists: {}\n\nmount -a stdout:\n{}\n\nmount -a stderr:\n{}\n\nReadonly diagnostic:\n{}\n\nFast Startup warning:\n{}\n\n{}",
-            report.summary,
+            "{}\nMounted: {}\nRead-write: {}\nWrite test: {}\nSteamLibrary exists: {}\n\nmount -a stdout:\n{}\n\nmount -a stderr:\n{}\n\nReadonly diagnostic:\n{}\n\nFast Startup warning:\n{}\n\n{}",
+            status_line(report.success, &report.summary),
             yes_no(report.mountpoint_mounted),
             yes_no(report.read_write),
             yes_no(report.write_test_succeeded),
@@ -748,9 +734,9 @@ fn mount_apply_result_view(state: &LinuxWizardState) -> View<'static> {
 
 fn steam_library_create_confirm_view(_state: &LinuxWizardState) -> View<'static> {
     View {
-        title: "Create SteamLibrary",
+        title: "Linux | Criar SteamLibrary",
         body: format!(
-            "The partition is mounted and writable, but {} does not exist yet.\n\nPress Enter to create the directory.",
+            "[INFO] A particao esta montada e com escrita liberada, mas {} ainda nao existe.\n\nLoading: a criacao da pasta comeca logo apos a confirmacao.",
             system::default_steam_library_path()
         ),
     }
@@ -765,10 +751,10 @@ fn steam_library_create_result_view(state: &LinuxWizardState) -> View<'static> {
     };
 
     View {
-        title: "SteamLibrary Result",
+        title: "Linux | Resultado da SteamLibrary",
         body: format!(
-            "Summary: {}\nSteamLibrary exists: {}\n\nPress Enter to continue to the final sharing guidance.",
-            report.summary,
+            "{}\nSteamLibrary exists: {}\n\n[INFO] Pressione Enter para continuar para as orientacoes finais.",
+            status_line(report.success, &report.summary),
             yes_no(report.steam_library_exists)
         ),
     }
@@ -820,9 +806,9 @@ fn final_guidance_view(state: &LinuxWizardState) -> View<'static> {
     };
 
     View {
-        title: "Linux Sharing Guidance",
+        title: "Linux | Compartilhamento Final",
         body: format!(
-            "Distro: {}\n{}\nMountpoint: {}\nSteam library path: {}\nntfs-3g: {}\n\nMount status:\n{}\n\nFinal steps:\n1. In Linux Steam, add or use the library folder at {}\n2. In Windows Steam, point the library to the same folder\n3. Do not use symlinks for this setup\n4. Keep both systems pointed to the exact same directory\n\nShared library target:\n{}\n\n{}",
+            "Distro: {}\n{}\nMountpoint: {}\nSteam library path: {}\nntfs-3g: {}\n\nMount status:\n{}\n\n[INFO] Passos finais:\n1. No Steam do Linux, adicione ou use a biblioteca em {}\n2. No Steam do Windows, aponte a biblioteca para a mesma pasta\n3. [WARNING] Nao use symlinks neste setup\n4. Mantenha os dois sistemas apontando para exatamente o mesmo diretorio\n\n[SUCCESS] Destino compartilhado:\n{}\n\n{}",
             state.distro().display_name(),
             partition_summary,
             system::default_mountpoint(),
@@ -944,4 +930,12 @@ fn present_output(value: &str) -> &str {
 
 fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
+}
+
+fn status_line(success: bool, message: &str) -> String {
+    if success {
+        format!("[SUCCESS] {message}")
+    } else {
+        format!("[ERROR] {message}")
+    }
 }

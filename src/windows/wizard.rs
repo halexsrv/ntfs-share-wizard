@@ -7,7 +7,7 @@ use crate::windows::system;
 pub fn detected_system_details(app: &App) -> String {
     let system_info = system::inspect();
     format!(
-        "Detected {} flow.\nSystem module: {}\nPress Enter to open the Fast Startup wizard.",
+        "[INFO] Fluxo detectado: {}.\nSystem module: {}\n\nPressione Enter para abrir o assistente de Fast Startup.",
         app.operating_system().display_name(),
         system_info.platform_label
     )
@@ -93,36 +93,39 @@ pub fn current_view(app: &App) -> View<'static> {
 
     match state.current_screen() {
         WindowsScreen::Explanation => View {
-            title: "Fast Startup",
+            title: "Windows | Fast Startup",
             body: [
-                "Fast Startup combines elements of hibernation and shutdown to speed up boot times.",
+                "[INFO] Fast Startup combina hibernacao parcial com desligamento para acelerar o boot.",
                 "",
-                "For NTFS sharing workflows, this can leave the Windows volume in a hybrid state and make safe access from Linux less reliable.",
+                "[WARNING] Em compartilhamento de particao NTFS entre Windows e Linux, isso pode deixar o volume em estado hibrido.",
                 "",
-                "Disabling Fast Startup helps ensure the NTFS volume is fully closed before you mount it elsewhere.",
+                "[SUCCESS] Desabilitar o Fast Startup ajuda a garantir que o NTFS seja fechado corretamente antes de montar no Linux.",
             ]
             .join("\n"),
         },
         WindowsScreen::Confirmation => View {
-            title: "Confirm Change",
+            title: "Windows | Confirmar Alteracao",
             body: [
-                "The wizard is ready to disable Fast Startup by running:",
+                "[INFO] O wizard esta pronto para desabilitar o Fast Startup com o comando:",
                 "powercfg /h off",
                 "",
-                "This may require administrative privileges. If the command fails, reopen the app in an elevated terminal and try again.",
+                "[WARNING] Isso pode exigir privilegios administrativos. Se falhar, abra o app em um terminal elevado e tente novamente.",
                 "",
-                "Press Enter to continue to the execution step.",
+                "Pressione Enter para confirmar.",
             ]
             .join("\n"),
         },
         WindowsScreen::Execution => View {
-            title: "Execute Command",
+            title: "Windows | Executar Comando",
             body: [
-                "Press Enter to execute:",
+                "[INFO] Tela de execucao pronta.",
+                "Pressione Enter para executar:",
                 "powercfg /h off",
                 "",
-                "This step runs only in the Windows flow.",
-                "Administrative privileges may be required.",
+                "[INFO] Esta etapa roda apenas no fluxo Windows.",
+                "[WARNING] Privilegios administrativos podem ser necessarios.",
+                "",
+                "Loading: o comando sera executado logo apos a confirmacao.",
             ]
             .join("\n"),
         },
@@ -132,11 +135,11 @@ pub fn current_view(app: &App) -> View<'static> {
 
 pub fn key_hints(state: Option<&WindowsWizardState>) -> &'static str {
     match state.map(WindowsWizardState::current_screen) {
-        Some(WindowsScreen::Explanation) => "Enter: next | Esc: back | q: quit",
-        Some(WindowsScreen::Confirmation) => "Enter: next | Esc: back | q: quit",
-        Some(WindowsScreen::Execution) => "Enter: run command | Esc: back | q: quit",
-        Some(WindowsScreen::Result) => "Esc: back | q: quit",
-        None => "q: quit",
+        Some(WindowsScreen::Explanation) => "Enter confirmar | Esc voltar | q sair",
+        Some(WindowsScreen::Confirmation) => "Enter confirmar | Esc voltar | q sair",
+        Some(WindowsScreen::Execution) => "Enter confirmar | Esc voltar | q sair",
+        Some(WindowsScreen::Result) => "Esc voltar | q sair",
+        None => "q sair",
     }
 }
 
@@ -147,8 +150,8 @@ fn result_view(state: &WindowsWizardState) -> View<'static> {
             let stdout = present_output("stdout", &result.stdout);
             let stderr = present_output("stderr", &result.stderr);
             format!(
-                "{}\n\n{}\n{}\nExit code: {}\n\nRecommended next step:\nshutdown /s /t 0",
-                result.summary,
+                "{}\n\n{}\n{}\nExit code: {}\n\n[INFO] Proximo passo recomendado:\nshutdown /s /t 0",
+                status_tag(result.success, &result.summary),
                 stdout,
                 stderr,
                 result
@@ -158,9 +161,9 @@ fn result_view(state: &WindowsWizardState) -> View<'static> {
             )
         }
         None => [
-            "No command result is available yet.",
+            "[WARNING] Nenhum resultado de comando esta disponivel ainda.",
             "",
-            "Recommended next step after a successful change:",
+            "[INFO] Proximo passo recomendado apos uma execucao bem-sucedida:",
             "shutdown /s /t 0",
         ]
         .join("\n"),
@@ -203,5 +206,13 @@ fn present_output(label: &str, value: &str) -> String {
         format!("{label}: <empty>")
     } else {
         format!("{label}: {value}")
+    }
+}
+
+fn status_tag(success: bool, message: &str) -> String {
+    if success {
+        format!("[SUCCESS] {message}")
+    } else {
+        format!("[ERROR] {message}")
     }
 }
