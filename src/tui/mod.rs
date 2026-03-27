@@ -1,7 +1,7 @@
 use std::io::{self, Stdout};
 
 use anyhow::Result;
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
@@ -13,9 +13,10 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-use crate::app::App;
+use crate::app::{App, Screen};
+use crate::os::OperatingSystem;
 
-pub fn render_once(app: &App, title: &str, details: &str) -> Result<()> {
+pub fn run(mut app: App) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     stdout.execute(EnterAlternateScreen)?;
@@ -23,31 +24,57 @@ pub fn render_once(app: &App, title: &str, details: &str) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    terminal.draw(|frame| {
-        let area = frame.area();
-        let sections = Layout::vertical([Constraint::Length(3), Constraint::Min(5)]).split(area);
+    let run_result = run_event_loop(&mut terminal, &mut app);
+    let cleanup_result = restore_terminal(&mut terminal);
 
-        let header = Paragraph::new(Line::from(title))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("ntfs-share-wizard"),
-            )
-            .style(Style::default().add_modifier(Modifier::BOLD));
+    run_result?;
+    cleanup_result
+}
 
-        let body = Paragraph::new(Text::from(format!(
-            "OS: {}\n\n{}",
-            app.operating_system().display_name(),
-            details
-        )))
-        .block(Block::default().borders(Borders::ALL).title("status"));
+fn run_event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()> {
+    while !app.should_quit() {
+        let view = current_view(app);
 
-        frame.render_widget(header, sections[0]);
-        frame.render_widget(body, sections[1]);
-    })?;
+        terminal.draw(|frame| {
+            let area = frame.area();
+            let sections =
+                Layout::vertical([Constraint::Length(3), Constraint::Min(5)]).split(area);
 
-    let _ = event::read().or_else(ignore_missing_tty_event);
-    restore_terminal(&mut terminal)
+            let header = Paragraph::new(Line::from(view.title))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("ntfs-share-wizard"),
+                )
+                .style(Style::default().add_modifier(Modifier::BOLD));
+
+            let body = Paragraph::new(Text::from(format!(
+                "OS: {}\n\n{}\n\n{}",
+                app.operating_system().display_name(),
+                view.body,
+                key_hints(app.current_screen())
+            )))
+            .block(Block::default().borders(Borders::ALL).title("status"));
+
+            frame.render_widget(header, sections[0]);
+            frame.render_widget(body, sections[1]);
+        })?;
+
+        if let Event::Key(key_event) = event::read().or_else(ignore_missing_tty_event)? {
+            if key_event.kind != KeyEventKind::Press {
+                continue;
+            }
+
+            match key_event.code {
+                KeyCode::Char('q') => app.request_quit(),
+                KeyCode::Enter => app.advance(),
+                KeyCode::Esc => app.go_back(),
+                _ => {}
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
@@ -62,5 +89,64 @@ fn ignore_missing_tty_event(error: io::Error) -> io::Result<Event> {
         Ok(Event::Resize(0, 0))
     } else {
         Err(error)
+    }
+}
+
+struct View<'a> {
+    title: &'a str,
+    body: String,
+}
+
+fn current_view(app: &App) -> View<'static> {
+    match app.current_screen() {
+        Screen::Welcome => View {
+            title: "Welcome",
+            body: "Press Enter to continue to the detected system flow.".to_owned(),
+        },
+        Screen::DetectedSystem => detected_system_view(app),
+        Screen::Unsupported => unsupported_view(app),
+    }
+}
+
+fn detected_system_view(app: &App) -> View<'static> {
+    match app.operating_system() {
+        OperatingSystem::Windows => View {
+            title: "Detected System",
+            body: crate::windows::wizard::detected_system_details(app),
+        },
+        OperatingSystem::Linux => View {
+            title: "Detected System",
+            body: crate::linux::wizard::detected_system_details(app),
+        },
+        OperatingSystem::Unsupported(name) => View {
+            title: "Unsupported",
+            body: format!("Unsupported operating system detected: {name}"),
+        },
+    }
+}
+
+fn unsupported_view(app: &App) -> View<'static> {
+    let details = match app.operating_system() {
+        OperatingSystem::Unsupported(name) => {
+            format!("Unsupported operating system detected: {name}")
+        }
+        supported => format!(
+            "Unsupported screen reached unexpectedly for supported OS: {}",
+            supported.display_name()
+        ),
+    };
+
+    View {
+        title: "Unsupported",
+        body: details,
+    }
+}
+
+fn key_hints(screen: Screen) -> &'static str {
+    match screen {
+        Screen::Welcome => "Enter: advance | q: quit",
+        Screen::DetectedSystem | Screen::Unsupported => {
+            "Enter: keep current screen | Esc: back | q: quit"
+        }
     }
 }

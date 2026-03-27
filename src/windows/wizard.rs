@@ -1,16 +1,11 @@
-use anyhow::Result;
-
 use crate::app::App;
-use crate::tui;
 use crate::windows::system;
 
-pub fn run(app: &App) -> Result<()> {
+pub fn detected_system_details(app: &App) -> String {
     let system_info = system::inspect();
-    let details = format!(
+    format!(
         "Detected {} flow.\nSystem module: {}",
         app.operating_system().display_name(),
         system_info.platform_label
-    );
-
-    tui::render_once(app, "Windows Wizard", &details)
+    )
 }

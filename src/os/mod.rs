@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 pub mod detect;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperatingSystem {
     Windows,
     Linux,
@@ -14,5 +16,9 @@ impl OperatingSystem {
             Self::Linux => "Linux",
             Self::Unsupported(name) => name.as_str(),
         }
+    }
+
+    pub fn is_supported(&self) -> bool {
+        matches!(self, Self::Windows | Self::Linux)
     }
 }
