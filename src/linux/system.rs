@@ -267,6 +267,14 @@ pub fn create_missing_mount_layout() -> PathCreationReport {
     create_missing_mount_layout_impl()
 }
 
+pub fn generate_fstab_entry(partition: &NtfsPartition) -> String {
+    format!(
+        "UUID={} {} ntfs-3g uid=1000,gid=1000,rw,noatime,user,exec,umask=022,nofail 0 0",
+        partition.uuid,
+        default_mountpoint()
+    )
+}
+
 pub fn human_readable_size(size_bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
 
