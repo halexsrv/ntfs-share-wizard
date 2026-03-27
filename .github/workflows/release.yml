@@ -69,20 +69,41 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
 
-      - name: Show downloaded files
-        run: find dist -maxdepth 3 -type f | sort
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find dist -maxdepth 3 -type f | sort
+          cp dist/ntfs-share-wizard-linux-x86_64/ntfs-share-wizard-linux-x86_64 \
+            release-assets/ntfs-share-wizard-linux-x86_64
+          cp dist/ntfs-share-wizard-windows-x86_64/ntfs-share-wizard-windows-x86_64.exe \
+            release-assets/ntfs-share-wizard-windows-x86_64.exe
+          find release-assets -maxdepth 1 -type f | sort
 
-      - name: Create GitHub release and upload assets
+      - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            dist/ntfs-share-wizard-linux-x86_64/ntfs-share-wizard-linux-x86_64 \
-            dist/ntfs-share-wizard-windows-x86_64/ntfs-share-wizard-windows-x86_64.exe \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+          gh --version
+
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" \
+              release-assets/ntfs-share-wizard-linux-x86_64 \
+              release-assets/ntfs-share-wizard-windows-x86_64.exe \
+              --clobber \
+              --repo "${GITHUB_REPOSITORY}"
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              release-assets/ntfs-share-wizard-linux-x86_64 \
+              release-assets/ntfs-share-wizard-windows-x86_64.exe \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes \
+              --repo "${GITHUB_REPOSITORY}"
+          fi
