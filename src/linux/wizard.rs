@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::App;
 use crate::linux::fstab;
+use crate::linux::mount;
 use crate::linux::system;
 use crate::os::OperatingSystem;
 use crate::tui::View;
@@ -55,6 +56,10 @@ pub enum LinuxScreen {
     FstabReview,
     FstabWriteConfirm,
     FstabWriteResult,
+    MountApplyConfirm,
+    MountApplyResult,
+    SteamLibraryCreateConfirm,
+    SteamLibraryCreateResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +76,8 @@ pub struct LinuxWizardState {
     mount_layout: system::MountLayoutStatus,
     path_creation_report: Option<system::PathCreationReport>,
     fstab_write_report: Option<fstab::FstabWriteReport>,
+    mount_apply_report: Option<mount::MountApplyReport>,
+    steam_library_create_report: Option<mount::SteamLibraryCreateReport>,
 }
 
 impl LinuxWizardState {
@@ -89,6 +96,8 @@ impl LinuxWizardState {
             mount_layout: system::validate_mount_layout(),
             path_creation_report: None,
             fstab_write_report: None,
+            mount_apply_report: None,
+            steam_library_create_report: None,
         }
     }
 
@@ -139,6 +148,14 @@ impl LinuxWizardState {
     pub fn fstab_write_report(&self) -> Option<&fstab::FstabWriteReport> {
         self.fstab_write_report.as_ref()
     }
+
+    pub fn mount_apply_report(&self) -> Option<&mount::MountApplyReport> {
+        self.mount_apply_report.as_ref()
+    }
+
+    pub fn steam_library_create_report(&self) -> Option<&mount::SteamLibraryCreateReport> {
+        self.steam_library_create_report.as_ref()
+    }
 }
 
 pub fn load_partitions(state: &mut LinuxWizardState) {
@@ -150,6 +167,8 @@ pub fn load_partitions(state: &mut LinuxWizardState) {
     state.path_creation_report = None;
     state.selected_partition = None;
     state.fstab_write_report = None;
+    state.mount_apply_report = None;
+    state.steam_library_create_report = None;
 
     if state.ntfs_3g_installed {
         refresh_partition_state(state);
@@ -190,6 +209,8 @@ pub fn advance(state: &mut LinuxWizardState) -> Option<system::NtfsPartition> {
                 state.mount_layout = system::validate_mount_layout();
                 state.path_creation_report = None;
                 state.fstab_write_report = None;
+                state.mount_apply_report = None;
+                state.steam_library_create_report = None;
                 state.current_screen = LinuxScreen::MountValidation;
                 Some(partition)
             } else {
@@ -234,7 +255,36 @@ pub fn advance(state: &mut LinuxWizardState) -> Option<system::NtfsPartition> {
             state.current_screen = LinuxScreen::FstabWriteResult;
             None
         }
-        LinuxScreen::FstabWriteResult => None,
+        LinuxScreen::FstabWriteResult => {
+            if state
+                .fstab_write_report()
+                .map(|report| report.success)
+                .unwrap_or(false)
+            {
+                state.current_screen = LinuxScreen::MountApplyConfirm;
+            }
+            None
+        }
+        LinuxScreen::MountApplyConfirm => {
+            state.mount_apply_report = Some(mount::apply_mount_and_validate());
+            state.current_screen = LinuxScreen::MountApplyResult;
+            None
+        }
+        LinuxScreen::MountApplyResult => {
+            if let Some(report) = state.mount_apply_report() {
+                if report.success && !report.steam_library_exists && report.steam_library_can_create
+                {
+                    state.current_screen = LinuxScreen::SteamLibraryCreateConfirm;
+                }
+            }
+            None
+        }
+        LinuxScreen::SteamLibraryCreateConfirm => {
+            state.steam_library_create_report = Some(mount::create_steam_library_directory());
+            state.current_screen = LinuxScreen::SteamLibraryCreateResult;
+            None
+        }
+        LinuxScreen::SteamLibraryCreateResult => None,
     }
 }
 
@@ -274,6 +324,22 @@ pub fn go_back(state: &mut LinuxWizardState) -> bool {
             state.current_screen = LinuxScreen::FstabReview;
             false
         }
+        LinuxScreen::MountApplyConfirm => {
+            state.current_screen = LinuxScreen::FstabWriteResult;
+            false
+        }
+        LinuxScreen::MountApplyResult => {
+            state.current_screen = LinuxScreen::MountApplyConfirm;
+            false
+        }
+        LinuxScreen::SteamLibraryCreateConfirm => {
+            state.current_screen = LinuxScreen::MountApplyResult;
+            false
+        }
+        LinuxScreen::SteamLibraryCreateResult => {
+            state.current_screen = LinuxScreen::MountApplyResult;
+            false
+        }
     }
 }
 
@@ -311,6 +377,10 @@ pub fn current_view(app: &App) -> View<'static> {
         LinuxScreen::FstabReview => fstab_review_view(state),
         LinuxScreen::FstabWriteConfirm => fstab_write_confirm_view(state),
         LinuxScreen::FstabWriteResult => fstab_write_result_view(state),
+        LinuxScreen::MountApplyConfirm => mount_apply_confirm_view(state),
+        LinuxScreen::MountApplyResult => mount_apply_result_view(state),
+        LinuxScreen::SteamLibraryCreateConfirm => steam_library_create_confirm_view(state),
+        LinuxScreen::SteamLibraryCreateResult => steam_library_create_result_view(state),
     }
 }
 
@@ -334,7 +404,17 @@ pub fn key_hints(state: Option<&LinuxWizardState>) -> &'static str {
             "Enter: continue to safe write flow | Esc: back | q: quit"
         }
         Some(LinuxScreen::FstabWriteConfirm) => "Enter: write /etc/fstab | Esc: back | q: quit",
-        Some(LinuxScreen::FstabWriteResult) => "Esc: back | q: quit",
+        Some(LinuxScreen::FstabWriteResult) => {
+            "Enter: continue to mount validation | Esc: back | q: quit"
+        }
+        Some(LinuxScreen::MountApplyConfirm) => "Enter: run mount -a | Esc: back | q: quit",
+        Some(LinuxScreen::MountApplyResult) => {
+            "Enter: continue when mount succeeded | Esc: back | q: quit"
+        }
+        Some(LinuxScreen::SteamLibraryCreateConfirm) => {
+            "Enter: create SteamLibrary | Esc: back | q: quit"
+        }
+        Some(LinuxScreen::SteamLibraryCreateResult) => "Esc: back | q: quit",
         None => "q: quit",
     }
 }
@@ -589,6 +669,86 @@ fn fstab_write_result_view(state: &LinuxWizardState) -> View<'static> {
     }
 }
 
+fn mount_apply_confirm_view(_state: &LinuxWizardState) -> View<'static> {
+    View {
+        title: "Apply Mount",
+        body: "The wizard will now run `mount -a`, verify that /media/gamedisk is mounted, check whether it is writable, run a temporary write test, and validate whether /media/gamedisk/SteamLibrary exists.".to_owned(),
+    }
+}
+
+fn mount_apply_result_view(state: &LinuxWizardState) -> View<'static> {
+    let Some(report) = state.mount_apply_report() else {
+        return View {
+            title: "Mount Result",
+            body: "No mount validation result is available yet.".to_owned(),
+        };
+    };
+
+    let readonly = report
+        .readonly_diagnostic
+        .as_deref()
+        .unwrap_or("No readonly diagnostic.");
+    let fast_startup = report
+        .fast_startup_warning
+        .as_deref()
+        .unwrap_or("No Fast Startup warning detected.");
+    let next_step = if report.success
+        && !report.steam_library_exists
+        && report.steam_library_can_create
+    {
+        "SteamLibrary is missing. Press Enter to review folder creation."
+    } else if report.success {
+        "The mount validation completed successfully."
+    } else {
+        "Review the diagnostics below before retrying. If the partition looks unsafe, check Fast Startup in Windows."
+    };
+
+    View {
+        title: "Mount Result",
+        body: format!(
+            "Summary: {}\nMounted: {}\nRead-write: {}\nWrite test: {}\nSteamLibrary exists: {}\n\nmount -a stdout:\n{}\n\nmount -a stderr:\n{}\n\nReadonly diagnostic:\n{}\n\nFast Startup warning:\n{}\n\n{}",
+            report.summary,
+            yes_no(report.mountpoint_mounted),
+            yes_no(report.read_write),
+            yes_no(report.write_test_succeeded),
+            yes_no(report.steam_library_exists),
+            present_output(&report.mount_command_stdout),
+            present_output(&report.mount_command_stderr),
+            readonly,
+            fast_startup,
+            next_step
+        ),
+    }
+}
+
+fn steam_library_create_confirm_view(_state: &LinuxWizardState) -> View<'static> {
+    View {
+        title: "Create SteamLibrary",
+        body: format!(
+            "The partition is mounted and writable, but {} does not exist yet.\n\nPress Enter to create the directory.",
+            system::default_steam_library_path()
+        ),
+    }
+}
+
+fn steam_library_create_result_view(state: &LinuxWizardState) -> View<'static> {
+    let Some(report) = state.steam_library_create_report() else {
+        return View {
+            title: "SteamLibrary Result",
+            body: "No SteamLibrary creation result is available yet.".to_owned(),
+        };
+    };
+
+    View {
+        title: "SteamLibrary Result",
+        body: format!(
+            "Summary: {}\nSteamLibrary exists: {}",
+            report.summary,
+            yes_no(report.steam_library_exists)
+        ),
+    }
+}
+
 fn refresh_partition_state(state: &mut LinuxWizardState) {
     match system::detect_ntfs_partitions() {
         Ok(partitions) if partitions.is_empty() => {
@@ -693,4 +853,8 @@ fn can_offer_creation(layout: &system::MountLayoutStatus) -> bool {
 
 fn present_output(value: &str) -> &str {
     if value.is_empty() { "<empty>" } else { value }
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
 }
