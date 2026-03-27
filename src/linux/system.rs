@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 #[cfg(target_os = "linux")]
 use std::process::Command;
@@ -87,6 +88,29 @@ pub struct InstallExecutionReport {
     pub final_ntfs_3g_installed: bool,
     pub summary: String,
     pub command_results: Vec<InstallCommandResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PathValidation {
+    pub path: String,
+    pub exists: bool,
+    pub is_directory: bool,
+    pub is_symlink: bool,
+    pub can_create: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MountLayoutStatus {
+    pub mountpoint: PathValidation,
+    pub steam_library: PathValidation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PathCreationReport {
+    pub success: bool,
+    pub created_anything: bool,
+    pub summary: String,
+    pub mount_layout: MountLayoutStatus,
 }
 
 pub fn inspect(distro: LinuxDistro) -> LinuxSystemInfo {
@@ -222,6 +246,25 @@ pub fn install_plan_for_distro(distro: &LinuxDistro) -> InstallPlan {
 
 pub fn execute_install_plan(distro: &LinuxDistro) -> InstallExecutionReport {
     execute_install_plan_impl(distro)
+}
+
+pub fn default_mountpoint() -> &'static str {
+    "/media/gamedisk"
+}
+
+pub fn default_steam_library_path() -> &'static str {
+    "/media/gamedisk/SteamLibrary"
+}
+
+pub fn validate_mount_layout() -> MountLayoutStatus {
+    MountLayoutStatus {
+        mountpoint: validate_path(default_mountpoint()),
+        steam_library: validate_path(default_steam_library_path()),
+    }
+}
+
+pub fn create_missing_mount_layout() -> PathCreationReport {
+    create_missing_mount_layout_impl()
 }
 
 pub fn human_readable_size(size_bytes: u64) -> String {
@@ -404,6 +447,97 @@ fn executable_in_path(binary_name: &str) -> bool {
 
 fn is_executable_file(path: &PathBuf) -> bool {
     path.is_file()
+}
+
+fn validate_path(path: &str) -> PathValidation {
+    let path_ref = Path::new(path);
+    let symlink_metadata = fs::symlink_metadata(path_ref).ok();
+    let exists = symlink_metadata.is_some();
+    let is_symlink = symlink_metadata
+        .as_ref()
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false);
+    let is_directory = symlink_metadata
+        .as_ref()
+        .map(|metadata| metadata.is_dir())
+        .unwrap_or(false);
+    let can_create = !exists && path_ref.parent().map(Path::exists).unwrap_or(false);
+
+    PathValidation {
+        path: path.to_owned(),
+        exists,
+        is_directory,
+        is_symlink,
+        can_create,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn create_missing_mount_layout_impl() -> PathCreationReport {
+    let initial = validate_mount_layout();
+
+    if initial.mountpoint.is_symlink || initial.steam_library.is_symlink {
+        return PathCreationReport {
+            success: false,
+            created_anything: false,
+            summary:
+                "A symlink was found in the target path. The wizard will not replace symlinks."
+                    .to_owned(),
+            mount_layout: initial,
+        };
+    }
+
+    if initial.mountpoint.exists && !initial.mountpoint.is_directory {
+        return PathCreationReport {
+            success: false,
+            created_anything: false,
+            summary: "The mountpoint path exists but is not a directory.".to_owned(),
+            mount_layout: initial,
+        };
+    }
+
+    if initial.steam_library.exists && !initial.steam_library.is_directory {
+        return PathCreationReport {
+            success: false,
+            created_anything: false,
+            summary: "The SteamLibrary path exists but is not a directory.".to_owned(),
+            mount_layout: initial,
+        };
+    }
+
+    let created_anything = !initial.mountpoint.exists || !initial.steam_library.exists;
+    let create_result = fs::create_dir_all(default_steam_library_path());
+    let final_layout = validate_mount_layout();
+
+    match create_result {
+        Ok(()) => PathCreationReport {
+            success: final_layout.mountpoint.exists
+                && final_layout.mountpoint.is_directory
+                && final_layout.steam_library.exists
+                && final_layout.steam_library.is_directory
+                && !final_layout.mountpoint.is_symlink
+                && !final_layout.steam_library.is_symlink,
+            created_anything,
+            summary: "The default mountpoint layout is ready.".to_owned(),
+            mount_layout: final_layout,
+        },
+        Err(error) => PathCreationReport {
+            success: false,
+            created_anything: false,
+            summary: format!("Could not create the default mount layout: {error}"),
+            mount_layout: final_layout,
+        },
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn create_missing_mount_layout_impl() -> PathCreationReport {
+    PathCreationReport {
+        success: false,
+        created_anything: false,
+        summary: "Mount layout creation is only available on Linux.".to_owned(),
+        mount_layout: validate_mount_layout(),
+    }
 }
 
 #[cfg(target_os = "linux")]

@@ -30,12 +30,13 @@ pub fn detected_system_details(app: &App) -> String {
         .unwrap_or_else(|| "not checked yet".to_owned());
 
     format!(
-        "Detected {} flow.\nLinux distro: {}\nntfs-3g: {}\nSystem module: {}\nTarget mount point: {}\nSelected partition: {}\nPress Enter to continue in the Linux wizard.",
+        "Detected {} flow.\nLinux distro: {}\nntfs-3g: {}\nSystem module: {}\nTarget mount point: {}\nDefault SteamLibrary: {}\nSelected partition: {}\nPress Enter to continue in the Linux wizard.",
         app.operating_system().display_name(),
         system_info.distro.display_name(),
         ntfs_3g_summary,
         system_info.platform_label,
         system_info.fstab_mount_point,
+        system::default_steam_library_path(),
         selected_partition
     )
 }
@@ -47,6 +48,9 @@ pub enum LinuxScreen {
     InstallResult,
     PartitionSelection,
     NoPartitions,
+    MountValidation,
+    MountCreateConfirm,
+    MountCreateResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +63,8 @@ pub struct LinuxWizardState {
     ntfs_3g_installed: bool,
     install_plan: system::InstallPlan,
     install_report: Option<system::InstallExecutionReport>,
+    mount_layout: system::MountLayoutStatus,
+    path_creation_report: Option<system::PathCreationReport>,
 }
 
 impl LinuxWizardState {
@@ -73,6 +79,8 @@ impl LinuxWizardState {
             ntfs_3g_installed: false,
             install_plan: system::install_plan_for_distro(&distro),
             install_report: None,
+            mount_layout: system::validate_mount_layout(),
+            path_creation_report: None,
         }
     }
 
@@ -107,6 +115,14 @@ impl LinuxWizardState {
     pub fn install_report(&self) -> Option<&system::InstallExecutionReport> {
         self.install_report.as_ref()
     }
+
+    pub fn mount_layout(&self) -> &system::MountLayoutStatus {
+        &self.mount_layout
+    }
+
+    pub fn path_creation_report(&self) -> Option<&system::PathCreationReport> {
+        self.path_creation_report.as_ref()
+    }
 }
 
 pub fn load_partitions(state: &mut LinuxWizardState) {
@@ -114,6 +130,8 @@ pub fn load_partitions(state: &mut LinuxWizardState) {
     state.ntfs_3g_installed = system::is_ntfs_3g_installed();
     state.install_plan = system::install_plan_for_distro(state.distro());
     state.install_report = None;
+    state.mount_layout = system::validate_mount_layout();
+    state.path_creation_report = None;
 
     if state.ntfs_3g_installed {
         refresh_partition_state(state);
@@ -128,9 +146,10 @@ pub fn load_partitions(state: &mut LinuxWizardState) {
 pub fn advance(state: &mut LinuxWizardState) -> Option<system::NtfsPartition> {
     match state.current_screen {
         LinuxScreen::InstallPlan => {
-            if state.ntfs_3g_installed {
+            if state.ntfs_3g_installed() {
                 refresh_partition_state(state);
-            } else if state.install_plan.execution_mode == system::InstallExecutionMode::Assisted {
+            } else if state.install_plan().execution_mode == system::InstallExecutionMode::Assisted
+            {
                 state.current_screen = LinuxScreen::InstallConfirm;
             }
             None
@@ -142,13 +161,42 @@ pub fn advance(state: &mut LinuxWizardState) -> Option<system::NtfsPartition> {
             None
         }
         LinuxScreen::InstallResult => {
-            if state.ntfs_3g_installed {
+            if state.ntfs_3g_installed() {
                 refresh_partition_state(state);
             }
             None
         }
-        LinuxScreen::PartitionSelection => state.partitions.get(state.selected_index).cloned(),
+        LinuxScreen::PartitionSelection => {
+            if let Some(partition) = state.partitions.get(state.selected_index).cloned() {
+                state.mount_layout = system::validate_mount_layout();
+                state.path_creation_report = None;
+                state.current_screen = LinuxScreen::MountValidation;
+                Some(partition)
+            } else {
+                None
+            }
+        }
         LinuxScreen::NoPartitions => None,
+        LinuxScreen::MountValidation => {
+            if needs_creation(state.mount_layout()) && can_offer_creation(state.mount_layout()) {
+                state.current_screen = LinuxScreen::MountCreateConfirm;
+            }
+            None
+        }
+        LinuxScreen::MountCreateConfirm => {
+            state.path_creation_report = Some(system::create_missing_mount_layout());
+            state.mount_layout = state
+                .path_creation_report()
+                .map(|report| report.mount_layout.clone())
+                .unwrap_or_else(system::validate_mount_layout);
+            state.current_screen = LinuxScreen::MountCreateResult;
+            None
+        }
+        LinuxScreen::MountCreateResult => {
+            state.mount_layout = system::validate_mount_layout();
+            state.current_screen = LinuxScreen::MountValidation;
+            None
+        }
     }
 }
 
@@ -164,6 +212,18 @@ pub fn go_back(state: &mut LinuxWizardState) -> bool {
             false
         }
         LinuxScreen::PartitionSelection | LinuxScreen::NoPartitions => true,
+        LinuxScreen::MountValidation => {
+            state.current_screen = LinuxScreen::PartitionSelection;
+            false
+        }
+        LinuxScreen::MountCreateConfirm => {
+            state.current_screen = LinuxScreen::MountValidation;
+            false
+        }
+        LinuxScreen::MountCreateResult => {
+            state.current_screen = LinuxScreen::MountValidation;
+            false
+        }
     }
 }
 
@@ -195,6 +255,9 @@ pub fn current_view(app: &App) -> View<'static> {
         LinuxScreen::InstallResult => install_result_view(state),
         LinuxScreen::PartitionSelection => partition_selection_view(state),
         LinuxScreen::NoPartitions => no_partitions_view(state),
+        LinuxScreen::MountValidation => mount_validation_view(state),
+        LinuxScreen::MountCreateConfirm => mount_create_confirm_view(state),
+        LinuxScreen::MountCreateResult => mount_create_result_view(state),
     }
 }
 
@@ -209,6 +272,11 @@ pub fn key_hints(state: Option<&LinuxWizardState>) -> &'static str {
             "Up/Down: move | Enter: select | Esc: back | q: quit"
         }
         Some(LinuxScreen::NoPartitions) => "Esc: back | q: quit",
+        Some(LinuxScreen::MountValidation) => {
+            "Enter: create missing folders when applicable | Esc: back | q: quit"
+        }
+        Some(LinuxScreen::MountCreateConfirm) => "Enter: create folders | Esc: back | q: quit",
+        Some(LinuxScreen::MountCreateResult) => "Enter: refresh validation | Esc: back | q: quit",
         None => "q: quit",
     }
 }
@@ -352,6 +420,53 @@ fn no_partitions_view(state: &LinuxWizardState) -> View<'static> {
     }
 }
 
+fn mount_validation_view(state: &LinuxWizardState) -> View<'static> {
+    let guidance = if needs_creation(state.mount_layout())
+        && can_offer_creation(state.mount_layout())
+    {
+        "Press Enter to review folder creation for the missing paths."
+    } else if needs_creation(state.mount_layout()) {
+        "Some paths are missing but cannot be created safely from the wizard. Review the status details."
+    } else {
+        "The default mountpoint and SteamLibrary paths already exist as real directories."
+    };
+
+    View {
+        title: "Validate Paths",
+        body: format!(
+            "{}\n\n{}",
+            format_mount_layout(state.mount_layout()),
+            guidance
+        ),
+    }
+}
+
+fn mount_create_confirm_view(state: &LinuxWizardState) -> View<'static> {
+    View {
+        title: "Confirm Folder Creation",
+        body: format!(
+            "{}\n\nThe wizard will create real directories when missing. It will not use symlinks.\n\nPress Enter to create the missing mountpoint layout.",
+            format_mount_layout(state.mount_layout())
+        ),
+    }
+}
+
+fn mount_create_result_view(state: &LinuxWizardState) -> View<'static> {
+    let report = state.path_creation_report();
+    let summary = report
+        .map(|value| value.summary.as_str())
+        .unwrap_or("No folder creation report is available.");
+
+    View {
+        title: "Folder Creation Result",
+        body: format!(
+            "Summary: {}\n\n{}\n\nPress Enter to refresh the validation screen.",
+            summary,
+            format_mount_layout(state.mount_layout())
+        ),
+    }
+}
+
 fn refresh_partition_state(state: &mut LinuxWizardState) {
     match system::detect_ntfs_partitions() {
         Ok(partitions) if partitions.is_empty() => {
@@ -408,6 +523,41 @@ fn format_install_plan(plan: &system::InstallPlan) -> String {
     );
 
     sections.join("\n")
+}
+
+fn format_mount_layout(layout: &system::MountLayoutStatus) -> String {
+    format!(
+        "Mountpoint base: {}\n  status: {}\n\nSteam library path: {}\n  status: {}",
+        layout.mountpoint.path,
+        describe_path_validation(&layout.mountpoint),
+        layout.steam_library.path,
+        describe_path_validation(&layout.steam_library)
+    )
+}
+
+fn describe_path_validation(path: &system::PathValidation) -> String {
+    if path.is_symlink {
+        "exists as symlink (manual fix required)".to_owned()
+    } else if path.exists && path.is_directory {
+        "exists as directory".to_owned()
+    } else if path.exists {
+        "exists but is not a directory".to_owned()
+    } else if path.can_create {
+        "missing, can be created".to_owned()
+    } else {
+        "missing, parent path is not ready".to_owned()
+    }
+}
+
+fn needs_creation(layout: &system::MountLayoutStatus) -> bool {
+    !layout.mountpoint.exists || !layout.steam_library.exists
+}
+
+fn can_offer_creation(layout: &system::MountLayoutStatus) -> bool {
+    !layout.mountpoint.is_symlink
+        && !layout.steam_library.is_symlink
+        && (!layout.mountpoint.exists || layout.mountpoint.is_directory)
+        && (!layout.steam_library.exists || layout.steam_library.is_directory)
 }
 
 fn present_output(value: &str) -> &str {
