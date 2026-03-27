@@ -114,7 +114,7 @@ fn detected_system_view(app: &App) -> View<'static> {
             title: "Detected System",
             body: crate::windows::wizard::detected_system_details(app),
         },
-        OperatingSystem::Linux => View {
+        OperatingSystem::Linux(_) => View {
             title: "Detected System",
             body: crate::linux::wizard::detected_system_details(app),
         },
