@@ -69,6 +69,8 @@ fn run_event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut A
                 KeyCode::Char('q') => app.request_quit(),
                 KeyCode::Enter => app.advance(),
                 KeyCode::Esc => app.go_back(),
+                KeyCode::Up => app.move_selection_up(),
+                KeyCode::Down => app.move_selection_down(),
                 _ => {}
             }
         }
@@ -104,6 +106,7 @@ fn current_view(app: &App) -> View<'static> {
             body: "Press Enter to continue to the detected system flow.".to_owned(),
         },
         Screen::DetectedSystem => detected_system_view(app),
+        Screen::LinuxWizard => crate::linux::wizard::current_view(app),
         Screen::WindowsWizard => crate::windows::wizard::current_view(app),
         Screen::Unsupported => unsupported_view(app),
     }
@@ -147,6 +150,7 @@ fn key_hints(app: &App) -> &'static str {
     let screen = app.current_screen();
     match screen {
         Screen::Welcome => "Enter: advance | q: quit",
+        Screen::LinuxWizard => crate::linux::wizard::key_hints(app.linux_wizard()),
         Screen::WindowsWizard => crate::windows::wizard::key_hints(app.windows_wizard()),
         Screen::DetectedSystem | Screen::Unsupported => {
             "Enter: keep current screen | Esc: back | q: quit"

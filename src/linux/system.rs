@@ -134,6 +134,7 @@ fn detect_ntfs_partitions_impl() -> Result<Vec<NtfsPartition>> {
     bail!("lsblk partition detection is only available on Linux")
 }
 
+#[cfg(any(test, target_os = "linux"))]
 fn ntfs_partitions_from_response(response: LsblkResponse) -> Vec<NtfsPartition> {
     let mut flattened = Vec::new();
     for device in response.blockdevices {
@@ -167,6 +168,7 @@ fn ntfs_partitions_from_response(response: LsblkResponse) -> Vec<NtfsPartition> 
     partitions
 }
 
+#[cfg(any(test, target_os = "linux"))]
 fn flatten_device_tree(device: LsblkDevice, output: &mut Vec<LsblkDevice>) {
     let children = device.children.clone().unwrap_or_default();
     output.push(LsblkDevice {
@@ -235,6 +237,7 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| haystack.contains(needle))
 }
 
+#[cfg(any(test, target_os = "linux"))]
 fn non_empty(value: Option<String>) -> Option<String> {
     value.and_then(|item| {
         let trimmed = item.trim();
@@ -242,11 +245,13 @@ fn non_empty(value: Option<String>) -> Option<String> {
     })
 }
 
+#[cfg(any(test, target_os = "linux"))]
 #[derive(Debug, Clone, Deserialize)]
 struct LsblkResponse {
     blockdevices: Vec<LsblkDevice>,
 }
 
+#[cfg(any(test, target_os = "linux"))]
 #[derive(Debug, Clone, Deserialize)]
 struct LsblkDevice {
     name: Option<String>,
