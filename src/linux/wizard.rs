@@ -60,6 +60,7 @@ pub enum LinuxScreen {
     MountApplyResult,
     SteamLibraryCreateConfirm,
     SteamLibraryCreateResult,
+    FinalGuidance,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -275,6 +276,8 @@ pub fn advance(state: &mut LinuxWizardState) -> Option<system::NtfsPartition> {
                 if report.success && !report.steam_library_exists && report.steam_library_can_create
                 {
                     state.current_screen = LinuxScreen::SteamLibraryCreateConfirm;
+                } else if report.success {
+                    state.current_screen = LinuxScreen::FinalGuidance;
                 }
             }
             None
@@ -284,7 +287,17 @@ pub fn advance(state: &mut LinuxWizardState) -> Option<system::NtfsPartition> {
             state.current_screen = LinuxScreen::SteamLibraryCreateResult;
             None
         }
-        LinuxScreen::SteamLibraryCreateResult => None,
+        LinuxScreen::SteamLibraryCreateResult => {
+            if state
+                .steam_library_create_report()
+                .map(|report| report.success && report.steam_library_exists)
+                .unwrap_or(false)
+            {
+                state.current_screen = LinuxScreen::FinalGuidance;
+            }
+            None
+        }
+        LinuxScreen::FinalGuidance => None,
     }
 }
 
@@ -340,6 +353,14 @@ pub fn go_back(state: &mut LinuxWizardState) -> bool {
             state.current_screen = LinuxScreen::MountApplyResult;
             false
         }
+        LinuxScreen::FinalGuidance => {
+            if state.steam_library_create_report().is_some() {
+                state.current_screen = LinuxScreen::SteamLibraryCreateResult;
+            } else {
+                state.current_screen = LinuxScreen::MountApplyResult;
+            }
+            false
+        }
     }
 }
 
@@ -381,6 +402,7 @@ pub fn current_view(app: &App) -> View<'static> {
         LinuxScreen::MountApplyResult => mount_apply_result_view(state),
         LinuxScreen::SteamLibraryCreateConfirm => steam_library_create_confirm_view(state),
         LinuxScreen::SteamLibraryCreateResult => steam_library_create_result_view(state),
+        LinuxScreen::FinalGuidance => final_guidance_view(state),
     }
 }
 
@@ -414,7 +436,10 @@ pub fn key_hints(state: Option<&LinuxWizardState>) -> &'static str {
         Some(LinuxScreen::SteamLibraryCreateConfirm) => {
             "Enter: create SteamLibrary | Esc: back | q: quit"
         }
-        Some(LinuxScreen::SteamLibraryCreateResult) => "Esc: back | q: quit",
+        Some(LinuxScreen::SteamLibraryCreateResult) => {
+            "Enter: continue to final guidance | Esc: back | q: quit"
+        }
+        Some(LinuxScreen::FinalGuidance) => "Esc: back | q: quit",
         None => "q: quit",
     }
 }
@@ -742,9 +767,71 @@ fn steam_library_create_result_view(state: &LinuxWizardState) -> View<'static> {
     View {
         title: "SteamLibrary Result",
         body: format!(
-            "Summary: {}\nSteamLibrary exists: {}",
+            "Summary: {}\nSteamLibrary exists: {}\n\nPress Enter to continue to the final sharing guidance.",
             report.summary,
             yes_no(report.steam_library_exists)
+        ),
+    }
+}
+
+fn final_guidance_view(state: &LinuxWizardState) -> View<'static> {
+    let partition_summary = state
+        .selected_partition()
+        .map(|partition| {
+            format!(
+                "Partition: {}\nUUID: {}\nSize: {}",
+                partition.path,
+                partition.uuid,
+                system::human_readable_size(partition.size_bytes)
+            )
+        })
+        .unwrap_or_else(|| "Partition: <none>\nUUID: <none>\nSize: <unknown>".to_owned());
+    let mount_summary = state
+        .mount_apply_report()
+        .map(|report| {
+            let mut lines = vec![
+                format!("Mounted: {}", yes_no(report.mountpoint_mounted)),
+                format!("Read-write: {}", yes_no(report.read_write)),
+                format!("Write test: {}", yes_no(report.write_test_succeeded)),
+                format!(
+                    "SteamLibrary exists: {}",
+                    yes_no(report.steam_library_exists)
+                ),
+            ];
+
+            if let Some(readonly) = &report.readonly_diagnostic {
+                lines.push(format!("Readonly diagnostic: {readonly}"));
+            }
+
+            if let Some(fast_startup) = &report.fast_startup_warning {
+                lines.push(format!("Fast Startup warning: {fast_startup}"));
+            }
+
+            lines.join("\n")
+        })
+        .unwrap_or_else(|| {
+            "Mounted: no\nRead-write: no\nWrite test: no\nSteamLibrary exists: no".to_owned()
+        });
+    let windows_warning = match state.mount_apply_report() {
+        Some(report) if !report.read_write || report.fast_startup_warning.is_some() => {
+            "Windows follow-up:\nIf the NTFS volume looks readonly or unsafe, boot into Windows, disable Fast Startup, run `powercfg /h off` if needed, then do a full shutdown with `shutdown /s /t 0` before retrying in Linux.".to_owned()
+        }
+        _ => "Windows follow-up:\nUse the same Steam library folder in both systems and keep the disk cleanly shut down before switching between Windows and Linux.".to_owned(),
+    };
+
+    View {
+        title: "Linux Sharing Guidance",
+        body: format!(
+            "Distro: {}\n{}\nMountpoint: {}\nSteam library path: {}\nntfs-3g: {}\n\nMount status:\n{}\n\nFinal steps:\n1. In Linux Steam, add or use the library folder at {}\n2. In Windows Steam, point the library to the same folder\n3. Do not use symlinks for this setup\n4. Keep both systems pointed to the exact same directory\n\nShared library target:\n{}\n\n{}",
+            state.distro().display_name(),
+            partition_summary,
+            system::default_mountpoint(),
+            system::default_steam_library_path(),
+            ntfs_3g_status_summary(state),
+            mount_summary,
+            system::default_steam_library_path(),
+            system::default_steam_library_path(),
+            windows_warning
         ),
     }
 }
