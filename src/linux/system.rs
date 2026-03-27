@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::env;
 use std::fs;
+use std::path::PathBuf;
 #[cfg(target_os = "linux")]
 use std::process::Command;
 
@@ -48,6 +50,13 @@ pub struct NtfsPartition {
     pub mountpoint: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstallPlan {
+    pub title: String,
+    pub steps: Vec<String>,
+    pub caution: Option<String>,
+}
+
 pub fn inspect(distro: LinuxDistro) -> LinuxSystemInfo {
     LinuxSystemInfo {
         platform_label: "linux",
@@ -67,6 +76,70 @@ pub fn detect_distro() -> LinuxDistro {
 
 pub fn detect_ntfs_partitions() -> Result<Vec<NtfsPartition>> {
     detect_ntfs_partitions_impl()
+}
+
+pub fn is_ntfs_3g_installed() -> bool {
+    executable_in_path("ntfs-3g")
+}
+
+pub fn install_plan_for_distro(distro: &LinuxDistro) -> InstallPlan {
+    match distro {
+        LinuxDistro::Ubuntu => InstallPlan {
+            title: "Ubuntu install plan".to_owned(),
+            steps: vec![
+                "sudo apt update".to_owned(),
+                "sudo apt install ntfs-3g".to_owned(),
+            ],
+            caution: None,
+        },
+        LinuxDistro::SteamOS => InstallPlan {
+            title: "SteamOS install plan".to_owned(),
+            steps: vec![
+                "sudo steamos-readonly disable".to_owned(),
+                "sudo pacman -Sy ntfs-3g".to_owned(),
+                "sudo steamos-readonly enable".to_owned(),
+            ],
+            caution: Some(
+                "SteamOS uses a readonly base image. Re-enable readonly mode after installing packages."
+                    .to_owned(),
+            ),
+        },
+        LinuxDistro::Bazzite => InstallPlan {
+            title: "Bazzite install plan".to_owned(),
+            steps: vec![
+                "Review whether ntfs-3g should be layered through rpm-ostree or provided by the image/toolbox.".to_owned(),
+                "Avoid changing the immutable base until the exact supported workflow is confirmed.".to_owned(),
+            ],
+            caution: Some(
+                "Bazzite is Fedora Atomic-based, so package installation needs extra care before changing the host."
+                    .to_owned(),
+            ),
+        },
+        LinuxDistro::Arch => InstallPlan {
+            title: "Arch Linux install plan".to_owned(),
+            steps: vec![
+                "sudo pacman -Sy".to_owned(),
+                "sudo pacman -S ntfs-3g".to_owned(),
+            ],
+            caution: None,
+        },
+        LinuxDistro::Fedora => InstallPlan {
+            title: "Fedora install plan".to_owned(),
+            steps: vec!["sudo dnf install ntfs-3g".to_owned()],
+            caution: None,
+        },
+        LinuxDistro::Unknown => InstallPlan {
+            title: "Unknown distro install plan".to_owned(),
+            steps: vec![
+                "Identify your distro package manager.".to_owned(),
+                "Install the ntfs-3g package using the distro-supported workflow.".to_owned(),
+            ],
+            caution: Some(
+                "The distro could not be identified automatically, so confirm the correct package source before installing."
+                    .to_owned(),
+            ),
+        },
+    }
 }
 
 pub fn human_readable_size(size_bytes: u64) -> String {
@@ -237,6 +310,20 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| haystack.contains(needle))
 }
 
+fn executable_in_path(binary_name: &str) -> bool {
+    let Some(paths) = env::var_os("PATH") else {
+        return false;
+    };
+
+    env::split_paths(&paths)
+        .map(|path| path.join(binary_name))
+        .any(|candidate| is_executable_file(&candidate))
+}
+
+fn is_executable_file(path: &PathBuf) -> bool {
+    path.is_file()
+}
+
 #[cfg(any(test, target_os = "linux"))]
 fn non_empty(value: Option<String>) -> Option<String> {
     value.and_then(|item| {
@@ -271,8 +358,9 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{
-        LinuxDistro, LsblkDevice, LsblkResponse, NtfsPartition, detect_distro_from_fields,
-        friendly_partition_title, human_readable_size, ntfs_partitions_from_response,
+        InstallPlan, LinuxDistro, LsblkDevice, LsblkResponse, NtfsPartition,
+        detect_distro_from_fields, friendly_partition_title, human_readable_size,
+        install_plan_for_distro, ntfs_partitions_from_response,
     };
 
     #[test]
@@ -402,6 +490,36 @@ mod tests {
         assert_eq!(
             friendly_partition_title(&partition),
             "Games (/dev/sda1, 1.0 TiB, UUID ABCD-1234)"
+        );
+    }
+
+    #[test]
+    fn creates_steamos_install_plan_with_readonly_steps() {
+        let plan = install_plan_for_distro(&LinuxDistro::SteamOS);
+
+        assert_eq!(plan.title, "SteamOS install plan");
+        assert_eq!(
+            plan.steps,
+            vec![
+                "sudo steamos-readonly disable",
+                "sudo pacman -Sy ntfs-3g",
+                "sudo steamos-readonly enable",
+            ]
+        );
+        assert!(plan.caution.is_some());
+    }
+
+    #[test]
+    fn creates_bazzite_install_plan_with_atomic_caution() {
+        let plan = install_plan_for_distro(&LinuxDistro::Bazzite);
+
+        assert_eq!(plan.title, "Bazzite install plan");
+        assert!(plan.steps.len() >= 2);
+        assert!(
+            plan.caution
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Fedora Atomic")
         );
     }
 }
