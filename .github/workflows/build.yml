@@ -1,0 +1,54 @@
+name: Build Release Binaries
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: ntfs-share-wizard-linux-x86_64
+            binary_name: ntfs-share-wizard-linux-x86_64
+            binary_suffix: ""
+          - label: Windows x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: ntfs-share-wizard-windows-x86_64
+            binary_name: ntfs-share-wizard-windows-x86_64.exe
+            binary_suffix: .exe
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Organize release binary
+        shell: bash
+        run: |
+          mkdir -p "dist/${{ matrix.artifact_name }}"
+          cp "target/${{ matrix.target }}/release/ntfs-share-wizard${{ matrix.binary_suffix }}" \
+            "dist/${{ matrix.artifact_name }}/${{ matrix.binary_name }}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}
+          if-no-files-found: error
