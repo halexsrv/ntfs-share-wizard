@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::app::App;
+use crate::linux::fstab;
 use crate::linux::system;
 use crate::os::OperatingSystem;
 use crate::tui::View;
@@ -52,6 +53,8 @@ pub enum LinuxScreen {
     MountCreateConfirm,
     MountCreateResult,
     FstabReview,
+    FstabWriteConfirm,
+    FstabWriteResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +70,7 @@ pub struct LinuxWizardState {
     install_report: Option<system::InstallExecutionReport>,
     mount_layout: system::MountLayoutStatus,
     path_creation_report: Option<system::PathCreationReport>,
+    fstab_write_report: Option<fstab::FstabWriteReport>,
 }
 
 impl LinuxWizardState {
@@ -84,6 +88,7 @@ impl LinuxWizardState {
             install_report: None,
             mount_layout: system::validate_mount_layout(),
             path_creation_report: None,
+            fstab_write_report: None,
         }
     }
 
@@ -130,6 +135,10 @@ impl LinuxWizardState {
     pub fn path_creation_report(&self) -> Option<&system::PathCreationReport> {
         self.path_creation_report.as_ref()
     }
+
+    pub fn fstab_write_report(&self) -> Option<&fstab::FstabWriteReport> {
+        self.fstab_write_report.as_ref()
+    }
 }
 
 pub fn load_partitions(state: &mut LinuxWizardState) {
@@ -140,6 +149,7 @@ pub fn load_partitions(state: &mut LinuxWizardState) {
     state.mount_layout = system::validate_mount_layout();
     state.path_creation_report = None;
     state.selected_partition = None;
+    state.fstab_write_report = None;
 
     if state.ntfs_3g_installed {
         refresh_partition_state(state);
@@ -179,6 +189,7 @@ pub fn advance(state: &mut LinuxWizardState) -> Option<system::NtfsPartition> {
                 state.selected_partition = Some(partition.clone());
                 state.mount_layout = system::validate_mount_layout();
                 state.path_creation_report = None;
+                state.fstab_write_report = None;
                 state.current_screen = LinuxScreen::MountValidation;
                 Some(partition)
             } else {
@@ -212,7 +223,18 @@ pub fn advance(state: &mut LinuxWizardState) -> Option<system::NtfsPartition> {
             }
             None
         }
-        LinuxScreen::FstabReview => None,
+        LinuxScreen::FstabReview => {
+            state.current_screen = LinuxScreen::FstabWriteConfirm;
+            None
+        }
+        LinuxScreen::FstabWriteConfirm => {
+            if let Some(partition) = state.selected_partition() {
+                state.fstab_write_report = Some(fstab::write_entry(partition));
+            }
+            state.current_screen = LinuxScreen::FstabWriteResult;
+            None
+        }
+        LinuxScreen::FstabWriteResult => None,
     }
 }
 
@@ -242,6 +264,14 @@ pub fn go_back(state: &mut LinuxWizardState) -> bool {
         }
         LinuxScreen::FstabReview => {
             state.current_screen = LinuxScreen::MountValidation;
+            false
+        }
+        LinuxScreen::FstabWriteConfirm => {
+            state.current_screen = LinuxScreen::FstabReview;
+            false
+        }
+        LinuxScreen::FstabWriteResult => {
+            state.current_screen = LinuxScreen::FstabReview;
             false
         }
     }
@@ -279,6 +309,8 @@ pub fn current_view(app: &App) -> View<'static> {
         LinuxScreen::MountCreateConfirm => mount_create_confirm_view(state),
         LinuxScreen::MountCreateResult => mount_create_result_view(state),
         LinuxScreen::FstabReview => fstab_review_view(state),
+        LinuxScreen::FstabWriteConfirm => fstab_write_confirm_view(state),
+        LinuxScreen::FstabWriteResult => fstab_write_result_view(state),
     }
 }
 
@@ -298,7 +330,11 @@ pub fn key_hints(state: Option<&LinuxWizardState>) -> &'static str {
         }
         Some(LinuxScreen::MountCreateConfirm) => "Enter: create folders | Esc: back | q: quit",
         Some(LinuxScreen::MountCreateResult) => "Enter: continue | Esc: back | q: quit",
-        Some(LinuxScreen::FstabReview) => "Esc: back | q: quit",
+        Some(LinuxScreen::FstabReview) => {
+            "Enter: continue to safe write flow | Esc: back | q: quit"
+        }
+        Some(LinuxScreen::FstabWriteConfirm) => "Enter: write /etc/fstab | Esc: back | q: quit",
+        Some(LinuxScreen::FstabWriteResult) => "Esc: back | q: quit",
         None => "q: quit",
     }
 }
@@ -506,6 +542,49 @@ fn fstab_review_view(state: &LinuxWizardState) -> View<'static> {
             partition.uuid,
             system::default_mountpoint(),
             system::generate_fstab_entry(partition)
+        ),
+    }
+}
+
+fn fstab_write_confirm_view(state: &LinuxWizardState) -> View<'static> {
+    let Some(partition) = state.selected_partition() else {
+        return View {
+            title: "Confirm fstab Write",
+            body: "No NTFS partition is selected for the safe /etc/fstab write flow.".to_owned(),
+        };
+    };
+
+    View {
+        title: "Confirm fstab Write",
+        body: format!(
+            "The wizard will:\n1. Create a timestamped backup of /etc/fstab\n2. Ensure {} exists\n3. Skip writing if UUID={} is already present\n4. Append the new line to the end of /etc/fstab\n\nLine to write:\n{}",
+            system::default_mountpoint(),
+            partition.uuid,
+            system::generate_fstab_entry(partition)
+        ),
+    }
+}
+
+fn fstab_write_result_view(state: &LinuxWizardState) -> View<'static> {
+    let Some(report) = state.fstab_write_report() else {
+        return View {
+            title: "fstab Write Result",
+            body: "No /etc/fstab write result is available yet.".to_owned(),
+        };
+    };
+
+    View {
+        title: "fstab Write Result",
+        body: format!(
+            "Summary: {}\nBackup created: {}\nEntry already existed: {}\n\nLine:\n{}",
+            report.summary,
+            report.backup_path.as_deref().unwrap_or("<none>"),
+            if report.entry_already_exists {
+                "yes"
+            } else {
+                "no"
+            },
+            report.written_line
         ),
     }
 }
