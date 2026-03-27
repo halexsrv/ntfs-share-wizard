@@ -52,7 +52,7 @@ fn run_event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut A
                 "OS: {}\n\n{}\n\n{}",
                 app.operating_system().display_name(),
                 view.body,
-                key_hints(app.current_screen())
+                key_hints(app)
             )))
             .block(Block::default().borders(Borders::ALL).title("status"));
 
@@ -92,9 +92,9 @@ fn ignore_missing_tty_event(error: io::Error) -> io::Result<Event> {
     }
 }
 
-struct View<'a> {
-    title: &'a str,
-    body: String,
+pub struct View<'a> {
+    pub title: &'a str,
+    pub body: String,
 }
 
 fn current_view(app: &App) -> View<'static> {
@@ -104,6 +104,7 @@ fn current_view(app: &App) -> View<'static> {
             body: "Press Enter to continue to the detected system flow.".to_owned(),
         },
         Screen::DetectedSystem => detected_system_view(app),
+        Screen::WindowsWizard => crate::windows::wizard::current_view(app),
         Screen::Unsupported => unsupported_view(app),
     }
 }
@@ -142,9 +143,11 @@ fn unsupported_view(app: &App) -> View<'static> {
     }
 }
 
-fn key_hints(screen: Screen) -> &'static str {
+fn key_hints(app: &App) -> &'static str {
+    let screen = app.current_screen();
     match screen {
         Screen::Welcome => "Enter: advance | q: quit",
+        Screen::WindowsWizard => crate::windows::wizard::key_hints(app.windows_wizard()),
         Screen::DetectedSystem | Screen::Unsupported => {
             "Enter: keep current screen | Esc: back | q: quit"
         }
