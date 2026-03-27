@@ -21,15 +21,15 @@ pub fn detected_system_details(app: &App) -> String {
         .linux_wizard()
         .map(|state| {
             if state.ntfs_3g_installed() {
-                "installed".to_owned()
+                "instalado".to_owned()
             } else {
                 format!(
-                    "missing\nInstall plan:\n{}",
+                    "ausente\nPlano de instalacao:\n{}",
                     format_install_plan(state.install_plan())
                 )
             }
         })
-        .unwrap_or_else(|| "not checked yet".to_owned());
+        .unwrap_or_else(|| "ainda nao verificado".to_owned());
 
     format!(
         "[INFO] Fluxo detectado: {}.\nLinux distro: {}\nntfs-3g: {}\nSystem module: {}\nTarget mount point: {}\nDefault SteamLibrary: {}\nSelected partition: {}\n\nPressione Enter para continuar no wizard Linux.",
@@ -382,7 +382,7 @@ pub fn current_view(app: &App) -> View<'static> {
     let Some(state) = app.linux_wizard() else {
         return View {
             title: "Linux Wizard",
-            body: "Linux wizard state is unavailable.".to_owned(),
+            body: "[ERROR] O estado do wizard Linux nao esta disponivel.".to_owned(),
         };
     };
 
@@ -468,7 +468,7 @@ fn install_result_view(state: &LinuxWizardState) -> View<'static> {
     let report = state.install_report();
     let results = match report {
         Some(report) if report.command_results.is_empty() => {
-            "No commands were executed.".to_owned()
+            "Nenhum comando foi executado.".to_owned()
         }
         Some(report) => report
             .command_results
@@ -482,22 +482,22 @@ fn install_result_view(state: &LinuxWizardState) -> View<'static> {
                     result
                         .exit_code
                         .map(|value| value.to_string())
-                        .unwrap_or_else(|| "unknown".to_owned()),
+                        .unwrap_or_else(|| "desconhecido".to_owned()),
                     present_output(&result.stdout),
                     present_output(&result.stderr)
                 )
             })
             .collect::<Vec<_>>()
             .join("\n\n"),
-        None => "No installation report is available.".to_owned(),
+        None => "Nenhum relatorio de instalacao esta disponivel.".to_owned(),
     };
     let summary = report
         .map(|value| value.summary.as_str())
-        .unwrap_or("The installation flow has not been executed yet.");
+        .unwrap_or("O fluxo de instalacao ainda nao foi executado.");
     let next_step = if state.ntfs_3g_installed() {
-        "Press Enter to continue to NTFS partition detection."
+        "[INFO] Pressione Enter para continuar para a deteccao de particoes NTFS."
     } else {
-        "ntfs-3g is still unavailable, so the wizard will not continue to partition or fstab steps."
+        "[WARNING] O ntfs-3g continua ausente, entao o wizard nao avancara para particoes nem para o fstab."
     };
 
     View {
@@ -573,11 +573,11 @@ fn mount_validation_view(state: &LinuxWizardState) -> View<'static> {
     let guidance = if needs_creation(state.mount_layout())
         && can_offer_creation(state.mount_layout())
     {
-        "Press Enter to review folder creation for the missing paths."
+        "Pressione Enter para revisar a criacao das pastas ausentes."
     } else if needs_creation(state.mount_layout()) {
-        "Some paths are missing but cannot be created safely from the wizard. Review the status details."
+        "Alguns caminhos estao ausentes, mas nao podem ser criados com seguranca por este wizard. Revise os detalhes."
     } else {
-        "The default mountpoint and SteamLibrary paths already exist as real directories. Press Enter to review the generated fstab entry."
+        "Os caminhos padrao do mountpoint e da SteamLibrary ja existem como diretorios reais. Pressione Enter para revisar a entrada gerada do fstab."
     };
 
     View {
@@ -620,7 +620,8 @@ fn fstab_review_view(state: &LinuxWizardState) -> View<'static> {
     let Some(partition) = state.selected_partition() else {
         return View {
             title: "Review fstab Entry",
-            body: "No NTFS partition is selected for fstab generation yet.".to_owned(),
+            body: "[ERROR] Nenhuma particao NTFS foi selecionada para gerar a entrada do fstab."
+                .to_owned(),
         };
     };
 
@@ -641,7 +642,9 @@ fn fstab_write_confirm_view(state: &LinuxWizardState) -> View<'static> {
     let Some(partition) = state.selected_partition() else {
         return View {
             title: "Confirm fstab Write",
-            body: "No NTFS partition is selected for the safe /etc/fstab write flow.".to_owned(),
+            body:
+                "[ERROR] Nenhuma particao NTFS foi selecionada para a escrita segura em /etc/fstab."
+                    .to_owned(),
         };
     };
 
@@ -660,7 +663,8 @@ fn fstab_write_result_view(state: &LinuxWizardState) -> View<'static> {
     let Some(report) = state.fstab_write_report() else {
         return View {
             title: "fstab Write Result",
-            body: "No /etc/fstab write result is available yet.".to_owned(),
+            body: "[ERROR] Nenhum resultado de escrita em /etc/fstab esta disponivel ainda."
+                .to_owned(),
         };
     };
 
@@ -691,7 +695,8 @@ fn mount_apply_result_view(state: &LinuxWizardState) -> View<'static> {
     let Some(report) = state.mount_apply_report() else {
         return View {
             title: "Linux | Resultado da Montagem",
-            body: "No mount validation result is available yet.".to_owned(),
+            body: "[ERROR] Nenhum resultado de validacao de montagem esta disponivel ainda."
+                .to_owned(),
         };
     };
 
@@ -707,11 +712,11 @@ fn mount_apply_result_view(state: &LinuxWizardState) -> View<'static> {
         && !report.steam_library_exists
         && report.steam_library_can_create
     {
-        "SteamLibrary is missing. Press Enter to review folder creation."
+        "[WARNING] A SteamLibrary esta ausente. Pressione Enter para revisar a criacao da pasta."
     } else if report.success {
-        "The mount validation completed successfully."
+        "[SUCCESS] A validacao da montagem foi concluida com sucesso."
     } else {
-        "Review the diagnostics below before retrying. If the partition looks unsafe, check Fast Startup in Windows."
+        "[WARNING] Revise os diagnosticos abaixo antes de tentar novamente. Se a particao parecer insegura, verifique o Fast Startup no Windows."
     };
 
     View {
@@ -746,7 +751,8 @@ fn steam_library_create_result_view(state: &LinuxWizardState) -> View<'static> {
     let Some(report) = state.steam_library_create_report() else {
         return View {
             title: "SteamLibrary Result",
-            body: "No SteamLibrary creation result is available yet.".to_owned(),
+            body: "[ERROR] Nenhum resultado da criacao da SteamLibrary esta disponivel ainda."
+                .to_owned(),
         };
     };
 
@@ -771,7 +777,7 @@ fn final_guidance_view(state: &LinuxWizardState) -> View<'static> {
                 system::human_readable_size(partition.size_bytes)
             )
         })
-        .unwrap_or_else(|| "Partition: <none>\nUUID: <none>\nSize: <unknown>".to_owned());
+        .unwrap_or_else(|| "Partition: <none>\nUUID: <none>\nSize: <desconhecido>".to_owned());
     let mount_summary = state
         .mount_apply_report()
         .map(|report| {
@@ -800,9 +806,9 @@ fn final_guidance_view(state: &LinuxWizardState) -> View<'static> {
         });
     let windows_warning = match state.mount_apply_report() {
         Some(report) if !report.read_write || report.fast_startup_warning.is_some() => {
-            "Windows follow-up:\nIf the NTFS volume looks readonly or unsafe, boot into Windows, disable Fast Startup, run `powercfg /h off` if needed, then do a full shutdown with `shutdown /s /t 0` before retrying in Linux.".to_owned()
+            "[WARNING] Correcao no Windows:\nSe o volume NTFS parecer somente leitura ou inseguro, inicialize no Windows, desabilite o Fast Startup, rode `powercfg /h off` se necessario e depois faca um desligamento completo com `shutdown /s /t 0` antes de tentar novamente no Linux.".to_owned()
         }
-        _ => "Windows follow-up:\nUse the same Steam library folder in both systems and keep the disk cleanly shut down before switching between Windows and Linux.".to_owned(),
+        _ => "[INFO] Orientacao para Windows:\nUse a mesma pasta de biblioteca Steam nos dois sistemas e mantenha o disco sempre desligado corretamente antes de alternar entre Windows e Linux.".to_owned(),
     };
 
     View {
@@ -892,15 +898,15 @@ fn format_mount_layout(layout: &system::MountLayoutStatus) -> String {
 
 fn describe_path_validation(path: &system::PathValidation) -> String {
     if path.is_symlink {
-        "exists as symlink (manual fix required)".to_owned()
+        "existe como symlink (correcao manual necessaria)".to_owned()
     } else if path.exists && path.is_directory {
-        "exists as directory".to_owned()
+        "existe como diretorio".to_owned()
     } else if path.exists {
-        "exists but is not a directory".to_owned()
+        "existe, mas nao e um diretorio".to_owned()
     } else if path.can_create {
-        "missing, can be created".to_owned()
+        "ausente, pode ser criado".to_owned()
     } else {
-        "missing, parent path is not ready".to_owned()
+        "ausente, o caminho pai nao esta pronto".to_owned()
     }
 }
 

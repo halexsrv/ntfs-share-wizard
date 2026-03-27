@@ -87,7 +87,7 @@ pub fn current_view(app: &App) -> View<'static> {
     let Some(state) = app.windows_wizard() else {
         return View {
             title: "Windows Wizard",
-            body: "Windows wizard state is unavailable.".to_owned(),
+            body: "[ERROR] O estado do wizard Windows nao esta disponivel.".to_owned(),
         };
     };
 
@@ -157,7 +157,7 @@ fn result_view(state: &WindowsWizardState) -> View<'static> {
                 result
                     .exit_code
                     .map(|code| code.to_string())
-                    .unwrap_or_else(|| "unknown".to_owned())
+                    .unwrap_or_else(|| "desconhecido".to_owned())
             )
         }
         None => [
@@ -179,21 +179,21 @@ fn run_disable_fast_startup() -> WindowsCommandResult {
     match system::disable_fast_startup() {
         Ok(report) if report.success => WindowsCommandResult {
             success: true,
-            summary: "Fast Startup was disabled successfully.".to_owned(),
+            summary: "O Fast Startup foi desabilitado com sucesso.".to_owned(),
             stdout: report.stdout,
             stderr: report.stderr,
             exit_code: report.exit_code,
         },
         Ok(report) => WindowsCommandResult {
             success: false,
-            summary: "Windows reported a failure while disabling Fast Startup. This often means the terminal is not elevated.".to_owned(),
+            summary: "O Windows reportou falha ao desabilitar o Fast Startup. Em muitos casos isso significa que o terminal nao esta elevado.".to_owned(),
             stdout: report.stdout,
             stderr: report.stderr,
             exit_code: report.exit_code,
         },
         Err(error) => WindowsCommandResult {
             success: false,
-            summary: format!("Could not execute powercfg /h off: {error}"),
+            summary: format!("Nao foi possivel executar `powercfg /h off`: {error}"),
             stdout: String::new(),
             stderr: String::new(),
             exit_code: None,

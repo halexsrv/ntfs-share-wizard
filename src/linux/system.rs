@@ -532,7 +532,10 @@ fn create_missing_mount_layout_impl() -> PathCreationReport {
         Err(error) => PathCreationReport {
             success: false,
             created_anything: false,
-            summary: format!("Could not create the default mount layout: {error}"),
+            summary: format!(
+                "Nao foi possivel criar a estrutura padrao de mount: {}",
+                friendly_io_error(&error)
+            ),
             mount_layout: final_layout,
         },
     }
@@ -543,7 +546,7 @@ fn create_missing_mount_layout_impl() -> PathCreationReport {
     PathCreationReport {
         success: false,
         created_anything: false,
-        summary: "Mount layout creation is only available on Linux.".to_owned(),
+        summary: "A criacao da estrutura de mount esta disponivel apenas no Linux.".to_owned(),
         mount_layout: validate_mount_layout(),
     }
 }
@@ -623,9 +626,9 @@ fn execute_command_sequence(steps: Vec<(&str, Vec<&str>)>) -> InstallExecutionRe
         success: final_ntfs_3g_installed,
         final_ntfs_3g_installed,
         summary: if final_ntfs_3g_installed {
-            "The assisted ntfs-3g installation completed successfully.".to_owned()
+            "A instalacao assistida de ntfs-3g foi concluida com sucesso.".to_owned()
         } else {
-            "The commands completed, but ntfs-3g is still missing from PATH.".to_owned()
+            "Os comandos terminaram, mas o ntfs-3g ainda nao esta disponivel no PATH.".to_owned()
         },
         command_results,
     }
@@ -661,9 +664,10 @@ fn execute_steamos_install_sequence() -> InstallExecutionReport {
             success,
             final_ntfs_3g_installed,
             summary: if success {
-                "SteamOS readonly mode was restored and ntfs-3g is now available.".to_owned()
+                "O modo readonly do SteamOS foi restaurado e o ntfs-3g agora esta disponivel."
+                    .to_owned()
             } else {
-                "SteamOS installation finished with errors. Review the command results before continuing."
+                "A instalacao no SteamOS terminou com erros. Revise os resultados dos comandos antes de continuar."
                     .to_owned()
             },
             command_results,
@@ -674,7 +678,7 @@ fn execute_steamos_install_sequence() -> InstallExecutionReport {
     InstallExecutionReport {
         success: false,
         final_ntfs_3g_installed,
-        summary: "SteamOS readonly mode could not be disabled, so installation was not attempted."
+        summary: "Nao foi possivel desabilitar o modo readonly do SteamOS, entao a instalacao nao foi tentada."
             .to_owned(),
         command_results,
     }
@@ -691,7 +695,7 @@ fn run_command(label: &str, command: &[&str]) -> InstallCommandResult {
                 success: false,
                 exit_code: None,
                 stdout: String::new(),
-                stderr: error.to_string(),
+                stderr: friendly_io_error(&error),
                 skipped: false,
             };
         }
@@ -714,6 +718,15 @@ fn non_empty(value: Option<String>) -> Option<String> {
         let trimmed = item.trim();
         (!trimmed.is_empty()).then(|| trimmed.to_owned())
     })
+}
+
+#[cfg(target_os = "linux")]
+fn friendly_io_error(error: &std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::PermissionDenied {
+        "permissao negada. Execute o app novamente com privilegios suficientes.".to_owned()
+    } else {
+        error.to_string()
+    }
 }
 
 #[cfg(any(test, target_os = "linux"))]

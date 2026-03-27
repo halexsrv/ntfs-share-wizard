@@ -35,7 +35,10 @@ fn write_entry_impl(partition: &NtfsPartition) -> FstabWriteReport {
                 written_line,
                 None,
                 false,
-                format!("Could not read /etc/fstab: {}", friendly_io_error(&error)),
+                format!(
+                    "Nao foi possivel ler /etc/fstab: {}",
+                    friendly_io_error(&error)
+                ),
             );
         }
     };
@@ -47,7 +50,7 @@ fn write_entry_impl(partition: &NtfsPartition) -> FstabWriteReport {
             written_line,
             entry_already_exists: true,
             summary:
-                "An entry for this UUID already exists in /etc/fstab. No duplicate was written."
+                "Ja existe uma entrada para este UUID em /etc/fstab. Nenhuma duplicacao foi gravada."
                     .to_owned(),
         };
     }
@@ -58,7 +61,7 @@ fn write_entry_impl(partition: &NtfsPartition) -> FstabWriteReport {
             None,
             false,
             format!(
-                "Could not ensure the mountpoint exists: {}",
+                "Nao foi possivel garantir que o mountpoint exista: {}",
                 friendly_io_error(&error)
             ),
         );
@@ -71,7 +74,7 @@ fn write_entry_impl(partition: &NtfsPartition) -> FstabWriteReport {
             None,
             false,
             format!(
-                "Could not create the /etc/fstab backup: {}",
+                "Nao foi possivel criar o backup de /etc/fstab: {}",
                 friendly_io_error(&error)
             ),
         );
@@ -90,14 +93,17 @@ fn write_entry_impl(partition: &NtfsPartition) -> FstabWriteReport {
             backup_path: Some(backup_path),
             written_line,
             entry_already_exists: false,
-            summary: "The new NTFS entry was appended to /etc/fstab after creating a backup."
+            summary: "A nova entrada NTFS foi adicionada ao final de /etc/fstab apos a criacao do backup."
                 .to_owned(),
         },
         Err(error) => failure_report(
             written_line,
             Some(backup_path),
             false,
-            format!("Could not write /etc/fstab: {}", friendly_io_error(&error)),
+            format!(
+                "Nao foi possivel gravar /etc/fstab: {}",
+                friendly_io_error(&error)
+            ),
         ),
     }
 }
@@ -109,7 +115,7 @@ fn write_entry_impl(partition: &NtfsPartition) -> FstabWriteReport {
         backup_path: None,
         written_line: system::generate_fstab_entry(partition),
         entry_already_exists: false,
-        summary: "Safe fstab writing is only available on Linux.".to_owned(),
+        summary: "A escrita segura em /etc/fstab esta disponivel apenas no Linux.".to_owned(),
     }
 }
 
@@ -150,7 +156,7 @@ fn failure_report(
 #[cfg(target_os = "linux")]
 fn friendly_io_error(error: &io::Error) -> String {
     if error.kind() == io::ErrorKind::PermissionDenied {
-        "permission denied. Re-run the app with sufficient privileges.".to_owned()
+        "permissao negada. Execute o app novamente com privilegios suficientes.".to_owned()
     } else {
         error.to_string()
     }

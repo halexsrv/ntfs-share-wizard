@@ -54,7 +54,7 @@ fn apply_mount_and_validate_impl() -> MountApplyReport {
             return MountApplyReport {
                 success: false,
                 mount_command_stdout: String::new(),
-                mount_command_stderr: error.to_string(),
+                mount_command_stderr: friendly_io_error(&error),
                 mountpoint_mounted: false,
                 read_write: false,
                 write_test_succeeded: false,
@@ -62,7 +62,10 @@ fn apply_mount_and_validate_impl() -> MountApplyReport {
                 fast_startup_warning: None,
                 steam_library_exists: false,
                 steam_library_can_create: false,
-                summary: format!("Could not execute mount -a: {}", friendly_io_error(&error)),
+                summary: format!(
+                    "Nao foi possivel executar `mount -a`: {}",
+                    friendly_io_error(&error)
+                ),
             };
         }
     };
@@ -78,7 +81,7 @@ fn apply_mount_and_validate_impl() -> MountApplyReport {
     };
     let steam_library_status = validate_steam_library_path();
     let readonly_diagnostic = if mount_status.mounted && mount_status.readonly {
-        Some("The mountpoint is mounted but currently read-only.".to_owned())
+        Some("O mountpoint esta montado, mas atualmente esta em modo somente leitura.".to_owned())
     } else {
         write_test.diagnostic.clone()
     };
@@ -101,15 +104,15 @@ fn apply_mount_and_validate_impl() -> MountApplyReport {
             && !steam_library_status.is_symlink,
         steam_library_can_create: !steam_library_status.exists && steam_library_status.can_create,
         summary: if success {
-            "mount -a succeeded, the mountpoint is writable, and the partition is ready for validation."
+            "O `mount -a` funcionou, o mountpoint esta com escrita liberada e a particao esta pronta para validacao."
                 .to_owned()
         } else if !mount_status.mounted {
-            "mount -a did not leave /media/gamedisk mounted. Review the command output and fstab entry."
+            "O `mount -a` nao deixou `/media/gamedisk` montado. Revise a saida do comando e a entrada do fstab."
                 .to_owned()
         } else if mount_status.readonly {
-            "The partition is mounted, but only in read-only mode.".to_owned()
+            "A particao esta montada, mas apenas em modo somente leitura.".to_owned()
         } else {
-            "The mountpoint was found, but the write test failed.".to_owned()
+            "O mountpoint foi encontrado, mas o teste de escrita falhou.".to_owned()
         },
     }
 }
@@ -127,7 +130,7 @@ fn apply_mount_and_validate_impl() -> MountApplyReport {
         fast_startup_warning: None,
         steam_library_exists: false,
         steam_library_can_create: false,
-        summary: "Mount validation is only available on Linux.".to_owned(),
+        summary: "A validacao de montagem esta disponivel apenas no Linux.".to_owned(),
     }
 }
 
@@ -137,7 +140,7 @@ fn create_steam_library_directory_impl() -> SteamLibraryCreateReport {
     if validation.is_symlink {
         return SteamLibraryCreateReport {
             success: false,
-            summary: "SteamLibrary exists as a symlink, and the wizard will not replace symlinks."
+            summary: "A SteamLibrary existe como symlink, e o wizard nao substitui symlinks."
                 .to_owned(),
             steam_library_exists: false,
         };
@@ -146,7 +149,7 @@ fn create_steam_library_directory_impl() -> SteamLibraryCreateReport {
     if validation.exists && !validation.is_directory {
         return SteamLibraryCreateReport {
             success: false,
-            summary: "SteamLibrary exists but is not a directory.".to_owned(),
+            summary: "A SteamLibrary existe, mas nao e um diretorio.".to_owned(),
             steam_library_exists: false,
         };
     }
@@ -154,13 +157,13 @@ fn create_steam_library_directory_impl() -> SteamLibraryCreateReport {
     match fs::create_dir_all(system::default_steam_library_path()) {
         Ok(()) => SteamLibraryCreateReport {
             success: true,
-            summary: "The SteamLibrary directory is ready.".to_owned(),
+            summary: "O diretorio SteamLibrary esta pronto.".to_owned(),
             steam_library_exists: true,
         },
         Err(error) => SteamLibraryCreateReport {
             success: false,
             summary: format!(
-                "Could not create the SteamLibrary directory: {}",
+                "Nao foi possivel criar o diretorio SteamLibrary: {}",
                 friendly_io_error(&error)
             ),
             steam_library_exists: false,
@@ -172,7 +175,7 @@ fn create_steam_library_directory_impl() -> SteamLibraryCreateReport {
 fn create_steam_library_directory_impl() -> SteamLibraryCreateReport {
     SteamLibraryCreateReport {
         success: false,
-        summary: "SteamLibrary creation is only available on Linux.".to_owned(),
+        summary: "A criacao da SteamLibrary esta disponivel apenas no Linux.".to_owned(),
         steam_library_exists: false,
     }
 }
@@ -238,7 +241,10 @@ fn try_write_test() -> WriteTestResult {
         }
         Err(error) => WriteTestResult {
             succeeded: false,
-            diagnostic: Some(format!("Write test failed: {}", friendly_io_error(&error))),
+            diagnostic: Some(format!(
+                "O teste de escrita falhou: {}",
+                friendly_io_error(&error)
+            )),
         },
     }
 }
@@ -265,14 +271,14 @@ fn detect_fast_startup_warning(output: &str, diagnostic: Option<&str>) -> Option
     ];
 
     suspicious.iter().any(|needle| combined.contains(needle)).then(|| {
-        "The NTFS partition may be in an unsafe Windows state. Check whether Fast Startup is still enabled and perform a full Windows shutdown before retrying.".to_owned()
+        "A particao NTFS pode estar em um estado inseguro vindo do Windows. Verifique se o Fast Startup ainda esta ativo e faca um desligamento completo do Windows antes de tentar novamente.".to_owned()
     })
 }
 
 #[cfg(target_os = "linux")]
 fn friendly_io_error(error: &io::Error) -> String {
     if error.kind() == io::ErrorKind::PermissionDenied {
-        "permission denied. Re-run the app with sufficient privileges.".to_owned()
+        "permissao negada. Execute o app novamente com privilegios suficientes.".to_owned()
     } else {
         error.to_string()
     }
