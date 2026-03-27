@@ -83,7 +83,9 @@ impl App {
             },
             Screen::LinuxWizard => {
                 if let Some(wizard) = self.linux_wizard.as_mut() {
-                    self.selected_linux_partition = crate::linux::wizard::advance(wizard);
+                    if let Some(partition) = crate::linux::wizard::advance(wizard) {
+                        self.selected_linux_partition = Some(partition);
+                    }
                 }
                 self.current_screen
             }

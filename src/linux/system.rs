@@ -53,8 +53,40 @@ pub struct NtfsPartition {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstallPlan {
     pub title: String,
-    pub steps: Vec<String>,
+    pub steps: Vec<InstallStep>,
     pub caution: Option<String>,
+    pub execution_mode: InstallExecutionMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstallStep {
+    pub label: String,
+    pub command_preview: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InstallExecutionMode {
+    Assisted,
+    GuidedOnly,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstallCommandResult {
+    pub label: String,
+    pub command: Option<String>,
+    pub success: bool,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub skipped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstallExecutionReport {
+    pub success: bool,
+    pub final_ntfs_3g_installed: bool,
+    pub summary: String,
+    pub command_results: Vec<InstallCommandResult>,
 }
 
 pub fn inspect(distro: LinuxDistro) -> LinuxSystemInfo {
@@ -87,59 +119,109 @@ pub fn install_plan_for_distro(distro: &LinuxDistro) -> InstallPlan {
         LinuxDistro::Ubuntu => InstallPlan {
             title: "Ubuntu install plan".to_owned(),
             steps: vec![
-                "sudo apt update".to_owned(),
-                "sudo apt install ntfs-3g".to_owned(),
+                InstallStep {
+                    label: "Refresh apt metadata".to_owned(),
+                    command_preview: Some("sudo apt update".to_owned()),
+                },
+                InstallStep {
+                    label: "Install ntfs-3g".to_owned(),
+                    command_preview: Some("sudo apt install -y ntfs-3g".to_owned()),
+                },
             ],
             caution: None,
+            execution_mode: InstallExecutionMode::Assisted,
         },
         LinuxDistro::SteamOS => InstallPlan {
             title: "SteamOS install plan".to_owned(),
             steps: vec![
-                "sudo steamos-readonly disable".to_owned(),
-                "sudo pacman -Sy ntfs-3g".to_owned(),
-                "sudo steamos-readonly enable".to_owned(),
+                InstallStep {
+                    label: "Disable readonly mode".to_owned(),
+                    command_preview: Some("sudo steamos-readonly disable".to_owned()),
+                },
+                InstallStep {
+                    label: "Install ntfs-3g".to_owned(),
+                    command_preview: Some("sudo pacman -Sy --noconfirm ntfs-3g".to_owned()),
+                },
+                InstallStep {
+                    label: "Re-enable readonly mode".to_owned(),
+                    command_preview: Some("sudo steamos-readonly enable".to_owned()),
+                },
             ],
             caution: Some(
                 "SteamOS uses a readonly base image. Re-enable readonly mode after installing packages."
                     .to_owned(),
             ),
+            execution_mode: InstallExecutionMode::Assisted,
         },
         LinuxDistro::Bazzite => InstallPlan {
             title: "Bazzite install plan".to_owned(),
             steps: vec![
-                "Review whether ntfs-3g should be layered through rpm-ostree or provided by the image/toolbox.".to_owned(),
-                "Avoid changing the immutable base until the exact supported workflow is confirmed.".to_owned(),
+                InstallStep {
+                    label: "Review the supported Bazzite workflow".to_owned(),
+                    command_preview: None,
+                },
+                InstallStep {
+                    label: "Confirm whether ntfs-3g should come from the image, toolbox, or rpm-ostree layering".to_owned(),
+                    command_preview: None,
+                },
+                InstallStep {
+                    label: "Avoid changing the immutable base until the exact supported path is confirmed".to_owned(),
+                    command_preview: None,
+                },
             ],
             caution: Some(
                 "Bazzite is Fedora Atomic-based, so package installation needs extra care before changing the host."
                     .to_owned(),
             ),
+            execution_mode: InstallExecutionMode::GuidedOnly,
         },
         LinuxDistro::Arch => InstallPlan {
             title: "Arch Linux install plan".to_owned(),
             steps: vec![
-                "sudo pacman -Sy".to_owned(),
-                "sudo pacman -S ntfs-3g".to_owned(),
+                InstallStep {
+                    label: "Refresh pacman metadata".to_owned(),
+                    command_preview: Some("sudo pacman -Sy".to_owned()),
+                },
+                InstallStep {
+                    label: "Install ntfs-3g".to_owned(),
+                    command_preview: Some("sudo pacman -S --noconfirm ntfs-3g".to_owned()),
+                },
             ],
             caution: None,
+            execution_mode: InstallExecutionMode::Assisted,
         },
         LinuxDistro::Fedora => InstallPlan {
             title: "Fedora install plan".to_owned(),
-            steps: vec!["sudo dnf install ntfs-3g".to_owned()],
+            steps: vec![InstallStep {
+                label: "Install ntfs-3g".to_owned(),
+                command_preview: Some("sudo dnf install -y ntfs-3g".to_owned()),
+            }],
             caution: None,
+            execution_mode: InstallExecutionMode::Assisted,
         },
         LinuxDistro::Unknown => InstallPlan {
             title: "Unknown distro install plan".to_owned(),
             steps: vec![
-                "Identify your distro package manager.".to_owned(),
-                "Install the ntfs-3g package using the distro-supported workflow.".to_owned(),
+                InstallStep {
+                    label: "Identify your distro package manager".to_owned(),
+                    command_preview: None,
+                },
+                InstallStep {
+                    label: "Install the ntfs-3g package using the distro-supported workflow".to_owned(),
+                    command_preview: None,
+                },
             ],
             caution: Some(
                 "The distro could not be identified automatically, so confirm the correct package source before installing."
                     .to_owned(),
             ),
+            execution_mode: InstallExecutionMode::GuidedOnly,
         },
     }
+}
+
+pub fn execute_install_plan(distro: &LinuxDistro) -> InstallExecutionReport {
+    execute_install_plan_impl(distro)
 }
 
 pub fn human_readable_size(size_bytes: u64) -> String {
@@ -322,6 +404,166 @@ fn executable_in_path(binary_name: &str) -> bool {
 
 fn is_executable_file(path: &PathBuf) -> bool {
     path.is_file()
+}
+
+#[cfg(target_os = "linux")]
+fn execute_install_plan_impl(distro: &LinuxDistro) -> InstallExecutionReport {
+    match distro {
+        LinuxDistro::Ubuntu => execute_command_sequence(vec![
+            ("Refresh apt metadata", vec!["sudo", "apt", "update"]),
+            (
+                "Install ntfs-3g",
+                vec!["sudo", "apt", "install", "-y", "ntfs-3g"],
+            ),
+        ]),
+        LinuxDistro::Arch => execute_command_sequence(vec![
+            ("Refresh pacman metadata", vec!["sudo", "pacman", "-Sy"]),
+            (
+                "Install ntfs-3g",
+                vec!["sudo", "pacman", "-S", "--noconfirm", "ntfs-3g"],
+            ),
+        ]),
+        LinuxDistro::Fedora => execute_command_sequence(vec![(
+            "Install ntfs-3g",
+            vec!["sudo", "dnf", "install", "-y", "ntfs-3g"],
+        )]),
+        LinuxDistro::SteamOS => execute_steamos_install_sequence(),
+        LinuxDistro::Bazzite => InstallExecutionReport {
+            success: false,
+            final_ntfs_3g_installed: is_ntfs_3g_installed(),
+            summary: "Bazzite requires a conservative guided flow. No automatic commands were executed."
+                .to_owned(),
+            command_results: Vec::new(),
+        },
+        LinuxDistro::Unknown => InstallExecutionReport {
+            success: false,
+            final_ntfs_3g_installed: is_ntfs_3g_installed(),
+            summary:
+                "The distro could not be identified safely, so no installation commands were executed."
+                    .to_owned(),
+            command_results: Vec::new(),
+        },
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn execute_install_plan_impl(_distro: &LinuxDistro) -> InstallExecutionReport {
+    InstallExecutionReport {
+        success: false,
+        final_ntfs_3g_installed: false,
+        summary: "Assisted ntfs-3g installation is only available on Linux.".to_owned(),
+        command_results: Vec::new(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn execute_command_sequence(steps: Vec<(&str, Vec<&str>)>) -> InstallExecutionReport {
+    let mut command_results = Vec::new();
+
+    for (label, command) in steps {
+        let result = run_command(label, &command);
+        let should_continue = result.success;
+        command_results.push(result);
+
+        if !should_continue {
+            let final_ntfs_3g_installed = is_ntfs_3g_installed();
+            return InstallExecutionReport {
+                success: false,
+                final_ntfs_3g_installed,
+                summary: "The installation stopped because one command failed.".to_owned(),
+                command_results,
+            };
+        }
+    }
+
+    let final_ntfs_3g_installed = is_ntfs_3g_installed();
+    InstallExecutionReport {
+        success: final_ntfs_3g_installed,
+        final_ntfs_3g_installed,
+        summary: if final_ntfs_3g_installed {
+            "The assisted ntfs-3g installation completed successfully.".to_owned()
+        } else {
+            "The commands completed, but ntfs-3g is still missing from PATH.".to_owned()
+        },
+        command_results,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn execute_steamos_install_sequence() -> InstallExecutionReport {
+    let disable = run_command(
+        "Disable readonly mode",
+        &["sudo", "steamos-readonly", "disable"],
+    );
+    let disable_succeeded = disable.success;
+    let mut command_results = vec![disable];
+
+    if disable_succeeded {
+        let install = run_command(
+            "Install ntfs-3g",
+            &["sudo", "pacman", "-Sy", "--noconfirm", "ntfs-3g"],
+        );
+        let install_succeeded = install.success;
+        command_results.push(install);
+
+        let enable = run_command(
+            "Re-enable readonly mode",
+            &["sudo", "steamos-readonly", "enable"],
+        );
+        let enable_succeeded = enable.success;
+        command_results.push(enable);
+
+        let final_ntfs_3g_installed = is_ntfs_3g_installed();
+        let success = install_succeeded && enable_succeeded && final_ntfs_3g_installed;
+        return InstallExecutionReport {
+            success,
+            final_ntfs_3g_installed,
+            summary: if success {
+                "SteamOS readonly mode was restored and ntfs-3g is now available.".to_owned()
+            } else {
+                "SteamOS installation finished with errors. Review the command results before continuing."
+                    .to_owned()
+            },
+            command_results,
+        };
+    }
+
+    let final_ntfs_3g_installed = is_ntfs_3g_installed();
+    InstallExecutionReport {
+        success: false,
+        final_ntfs_3g_installed,
+        summary: "SteamOS readonly mode could not be disabled, so installation was not attempted."
+            .to_owned(),
+        command_results,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn run_command(label: &str, command: &[&str]) -> InstallCommandResult {
+    let output = match Command::new(command[0]).args(&command[1..]).output() {
+        Ok(output) => output,
+        Err(error) => {
+            return InstallCommandResult {
+                label: label.to_owned(),
+                command: Some(command.join(" ")),
+                success: false,
+                exit_code: None,
+                stdout: String::new(),
+                stderr: error.to_string(),
+                skipped: false,
+            };
+        }
+    };
+
+    InstallCommandResult {
+        label: label.to_owned(),
+        command: Some(command.join(" ")),
+        success: output.status.success(),
+        exit_code: output.status.code(),
+        stdout: String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        skipped: false,
+    }
 }
 
 #[cfg(any(test, target_os = "linux"))]
