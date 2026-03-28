@@ -113,6 +113,14 @@ pub struct PathCreationReport {
     pub mount_layout: MountLayoutStatus,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinuxPrivilegeStatus {
+    pub is_root: bool,
+    pub sudo_available: bool,
+    pub can_run_sudo_without_password: bool,
+    pub summary: String,
+}
+
 pub fn inspect(distro: LinuxDistro) -> LinuxSystemInfo {
     LinuxSystemInfo {
         platform_label: "linux",
@@ -246,6 +254,10 @@ pub fn install_plan_for_distro(distro: &LinuxDistro) -> InstallPlan {
 
 pub fn execute_install_plan(distro: &LinuxDistro) -> InstallExecutionReport {
     execute_install_plan_impl(distro)
+}
+
+pub fn privilege_status() -> LinuxPrivilegeStatus {
+    privilege_status_impl()
 }
 
 pub fn default_mountpoint() -> &'static str {
@@ -482,6 +494,19 @@ fn validate_path(path: &str) -> PathValidation {
 
 #[cfg(target_os = "linux")]
 fn create_missing_mount_layout_impl() -> PathCreationReport {
+    let privilege = privilege_status();
+    if !privilege.is_root {
+        return PathCreationReport {
+            success: false,
+            created_anything: false,
+            summary: format!(
+                "A criacao de `/media/gamedisk` e `/media/gamedisk/SteamLibrary` exige privilegios de root. {}",
+                privilege.summary
+            ),
+            mount_layout: validate_mount_layout(),
+        };
+    }
+
     let initial = validate_mount_layout();
 
     if initial.mountpoint.is_symlink || initial.steam_library.is_symlink {
@@ -552,7 +577,65 @@ fn create_missing_mount_layout_impl() -> PathCreationReport {
 }
 
 #[cfg(target_os = "linux")]
+fn privilege_status_impl() -> LinuxPrivilegeStatus {
+    let is_root = effective_uid().map(|uid| uid == 0).unwrap_or(false);
+    let sudo_available = executable_in_path("sudo");
+    let can_run_sudo_without_password = if is_root {
+        true
+    } else if sudo_available {
+        Command::new("sudo")
+            .args(["-n", "true"])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    let summary = if is_root {
+        "O processo atual ja esta rodando com privilegios de root.".to_owned()
+    } else if can_run_sudo_without_password {
+        "O sistema permite usar `sudo` sem prompt interativo nesta sessao.".to_owned()
+    } else if sudo_available {
+        "O `sudo` esta disponivel, mas esta sessao pode exigir autenticacao interativa fora do wizard."
+            .to_owned()
+    } else {
+        "O `sudo` nao esta disponivel no PATH e o processo atual nao esta em modo root.".to_owned()
+    };
+
+    LinuxPrivilegeStatus {
+        is_root,
+        sudo_available,
+        can_run_sudo_without_password,
+        summary,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn privilege_status_impl() -> LinuxPrivilegeStatus {
+    LinuxPrivilegeStatus {
+        is_root: false,
+        sudo_available: false,
+        can_run_sudo_without_password: false,
+        summary: "A verificacao de privilegios Linux esta disponivel apenas no Linux.".to_owned(),
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn execute_install_plan_impl(distro: &LinuxDistro) -> InstallExecutionReport {
+    let privilege = privilege_status();
+    if !privilege.is_root && !privilege.can_run_sudo_without_password {
+        return InstallExecutionReport {
+            success: false,
+            final_ntfs_3g_installed: is_ntfs_3g_installed(),
+            summary: format!(
+                "O fluxo assistido de instalacao precisa de root ou de `sudo` funcional sem prompt interativo. {}",
+                privilege.summary
+            ),
+            command_results: Vec::new(),
+        };
+    }
+
     match distro {
         LinuxDistro::Ubuntu => execute_command_sequence(vec![
             ("Refresh apt metadata", vec!["sudo", "apt", "update"]),
@@ -710,6 +793,19 @@ fn run_command(label: &str, command: &[&str]) -> InstallCommandResult {
         stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
         skipped: false,
     }
+}
+
+#[cfg(target_os = "linux")]
+fn effective_uid() -> Option<u32> {
+    let output = Command::new("id").arg("-u").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u32>()
+        .ok()
 }
 
 #[cfg(any(test, target_os = "linux"))]

@@ -6,10 +6,12 @@ use crate::windows::system;
 
 pub fn detected_system_details(app: &App) -> String {
     let system_info = system::inspect();
+    let admin = system::admin_status();
     format!(
-        "[INFO] Fluxo detectado: {}.\nSystem module: {}\n\nPressione Enter para abrir o assistente de Fast Startup.",
+        "[INFO] Fluxo detectado: {}.\nSystem module: {}\nAdmin: {}\n\nPressione Enter para abrir o assistente de Fast Startup.",
         app.operating_system().display_name(),
-        system_info.platform_label
+        system_info.platform_label,
+        admin.summary
     )
 }
 
@@ -105,29 +107,39 @@ pub fn current_view(app: &App) -> View<'static> {
         },
         WindowsScreen::Confirmation => View {
             title: "Windows | Confirmar Alteracao",
-            body: [
-                "[INFO] O wizard esta pronto para desabilitar o Fast Startup com o comando:",
-                "powercfg /h off",
-                "",
-                "[WARNING] Isso pode exigir privilegios administrativos. Se falhar, abra o app em um terminal elevado e tente novamente.",
-                "",
-                "Pressione Enter para confirmar.",
-            ]
-            .join("\n"),
+            body: {
+                let admin = system::admin_status();
+                vec![
+                    "[INFO] O wizard esta pronto para desabilitar o Fast Startup com o comando:"
+                        .to_owned(),
+                    "powercfg /h off".to_owned(),
+                    String::new(),
+                    "[WARNING] Isso pode exigir privilegios administrativos. Se falhar, abra o app em um terminal elevado e tente novamente.".to_owned(),
+                    String::new(),
+                    format!("Admin: {}", admin.summary),
+                    String::new(),
+                    "Pressione Enter para confirmar.".to_owned(),
+                ]
+                .join("\n")
+            },
         },
         WindowsScreen::Execution => View {
             title: "Windows | Executar Comando",
-            body: [
-                "[INFO] Tela de execucao pronta.",
-                "Pressione Enter para executar:",
-                "powercfg /h off",
-                "",
-                "[INFO] Esta etapa roda apenas no fluxo Windows.",
-                "[WARNING] Privilegios administrativos podem ser necessarios.",
-                "",
-                "Loading: o comando sera executado logo apos a confirmacao.",
-            ]
-            .join("\n"),
+            body: {
+                let admin = system::admin_status();
+                vec![
+                    "[INFO] Tela de execucao pronta.".to_owned(),
+                    "Pressione Enter para executar:".to_owned(),
+                    "powercfg /h off".to_owned(),
+                    String::new(),
+                    "[INFO] Esta etapa roda apenas no fluxo Windows.".to_owned(),
+                    "[WARNING] Privilegios administrativos podem ser necessarios.".to_owned(),
+                    format!("Admin: {}", admin.summary),
+                    String::new(),
+                    "Loading: o comando sera executado logo apos a confirmacao.".to_owned(),
+                ]
+                .join("\n")
+            },
         },
         WindowsScreen::Result => result_view(state),
     }
@@ -176,6 +188,17 @@ fn result_view(state: &WindowsWizardState) -> View<'static> {
 }
 
 fn run_disable_fast_startup() -> WindowsCommandResult {
+    let admin = system::admin_status();
+    if !admin.is_elevated {
+        return WindowsCommandResult {
+            success: false,
+            summary: admin.summary,
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+        };
+    }
+
     match system::disable_fast_startup() {
         Ok(report) if report.success => WindowsCommandResult {
             success: true,

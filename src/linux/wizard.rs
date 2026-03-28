@@ -453,12 +453,14 @@ fn install_plan_view(state: &LinuxWizardState) -> View<'static> {
 }
 
 fn install_confirm_view(state: &LinuxWizardState) -> View<'static> {
+    let privilege = system::privilege_status();
     View {
         title: "Linux | Confirmar Instalacao",
         body: format!(
-            "Linux distro: {}\nntfs-3g: {}\n\n[INFO] O wizard esta pronto para executar estes comandos passo a passo:\n\n{}\n\n[INFO] Cada comando captura stdout/stderr e interrompe em caso de falha.\nLoading: a execucao comeca logo apos a confirmacao.",
+            "Linux distro: {}\nntfs-3g: {}\nPrivilegios: {}\n\n[INFO] O wizard esta pronto para executar estes comandos passo a passo:\n\n{}\n\n[INFO] Cada comando captura stdout/stderr e interrompe em caso de falha.\nLoading: a execucao comeca logo apos a confirmacao.",
             state.distro().display_name(),
             ntfs_3g_status_summary(state),
+            privilege.summary,
             format_install_plan(state.install_plan())
         ),
     }
@@ -591,11 +593,13 @@ fn mount_validation_view(state: &LinuxWizardState) -> View<'static> {
 }
 
 fn mount_create_confirm_view(state: &LinuxWizardState) -> View<'static> {
+    let privilege = system::privilege_status();
     View {
         title: "Linux | Confirmar Criacao de Pastas",
         body: format!(
-            "{}\n\n[INFO] O wizard criara diretorios reais quando necessario.\n[WARNING] Symlinks nao sao usados neste fluxo.\n\nLoading: a criacao sera iniciada logo apos a confirmacao.",
-            format_mount_layout(state.mount_layout())
+            "{}\n\nPrivilegios: {}\n\n[INFO] O wizard criara diretorios reais quando necessario.\n[WARNING] Symlinks nao sao usados neste fluxo.\n\nLoading: a criacao sera iniciada logo apos a confirmacao.",
+            format_mount_layout(state.mount_layout()),
+            privilege.summary
         ),
     }
 }
@@ -647,11 +651,13 @@ fn fstab_write_confirm_view(state: &LinuxWizardState) -> View<'static> {
                     .to_owned(),
         };
     };
+    let privilege = system::privilege_status();
 
     View {
         title: "Linux | Confirmar Escrita no fstab",
         body: format!(
-            "[INFO] O wizard vai:\n1. Criar um backup timestampado de /etc/fstab\n2. Garantir que {} exista\n3. Ignorar a escrita se UUID={} ja estiver presente\n4. Acrescentar a nova linha ao final de /etc/fstab\n\n[INFO] Linha a ser gravada:\n{}\n\nLoading: a escrita segura comeca logo apos a confirmacao.",
+            "Privilegios: {}\n\n[INFO] O wizard vai:\n1. Criar um backup timestampado de /etc/fstab\n2. Garantir que {} exista\n3. Ignorar a escrita se UUID={} ja estiver presente\n4. Acrescentar a nova linha ao final de /etc/fstab\n\n[INFO] Linha a ser gravada:\n{}\n\nLoading: a escrita segura comeca logo apos a confirmacao.",
+            privilege.summary,
             system::default_mountpoint(),
             partition.uuid,
             system::generate_fstab_entry(partition)
@@ -685,9 +691,13 @@ fn fstab_write_result_view(state: &LinuxWizardState) -> View<'static> {
 }
 
 fn mount_apply_confirm_view(_state: &LinuxWizardState) -> View<'static> {
+    let privilege = system::privilege_status();
     View {
         title: "Linux | Aplicar Montagem",
-        body: "[INFO] O wizard executara `mount -a`, verificara se /media/gamedisk foi montado, testara escrita e validara /media/gamedisk/SteamLibrary.\n\nLoading: a verificacao da montagem comeca logo apos a confirmacao.".to_owned(),
+        body: format!(
+            "Privilegios: {}\n\n[INFO] O wizard executara `mount -a`, verificara se /media/gamedisk foi montado, testara escrita e validara /media/gamedisk/SteamLibrary.\n\nLoading: a verificacao da montagem comeca logo apos a confirmacao.",
+            privilege.summary
+        ),
     }
 }
 

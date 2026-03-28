@@ -27,6 +27,19 @@ pub fn write_entry(partition: &NtfsPartition) -> FstabWriteReport {
 
 #[cfg(target_os = "linux")]
 fn write_entry_impl(partition: &NtfsPartition) -> FstabWriteReport {
+    let privilege = system::privilege_status();
+    if !privilege.is_root {
+        return failure_report(
+            system::generate_fstab_entry(partition),
+            None,
+            false,
+            format!(
+                "A escrita segura em /etc/fstab exige privilegios de root. {}",
+                privilege.summary
+            ),
+        );
+    }
+
     let written_line = system::generate_fstab_entry(partition);
     let fstab_contents = match fs::read_to_string(FSTAB_PATH) {
         Ok(contents) => contents,

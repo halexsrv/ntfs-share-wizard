@@ -44,6 +44,26 @@ pub fn create_steam_library_directory() -> SteamLibraryCreateReport {
 
 #[cfg(target_os = "linux")]
 fn apply_mount_and_validate_impl() -> MountApplyReport {
+    let privilege = system::privilege_status();
+    if !privilege.is_root {
+        return MountApplyReport {
+            success: false,
+            mount_command_stdout: String::new(),
+            mount_command_stderr: String::new(),
+            mountpoint_mounted: false,
+            read_write: false,
+            write_test_succeeded: false,
+            readonly_diagnostic: None,
+            fast_startup_warning: None,
+            steam_library_exists: false,
+            steam_library_can_create: false,
+            summary: format!(
+                "A aplicacao de `mount -a` e a validacao final exigem privilegios de root. {}",
+                privilege.summary
+            ),
+        };
+    }
+
     let output = Command::new("mount").arg("-a").output();
     let (stdout, stderr) = match output {
         Ok(output) => (
@@ -136,6 +156,18 @@ fn apply_mount_and_validate_impl() -> MountApplyReport {
 
 #[cfg(target_os = "linux")]
 fn create_steam_library_directory_impl() -> SteamLibraryCreateReport {
+    let privilege = system::privilege_status();
+    if !privilege.is_root {
+        return SteamLibraryCreateReport {
+            success: false,
+            summary: format!(
+                "A criacao da SteamLibrary exige privilegios de root. {}",
+                privilege.summary
+            ),
+            steam_library_exists: false,
+        };
+    }
+
     let validation = system::validate_mount_layout().steam_library;
     if validation.is_symlink {
         return SteamLibraryCreateReport {
